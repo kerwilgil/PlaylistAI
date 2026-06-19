@@ -665,20 +665,60 @@ async function createPlaylist() {
   btn.innerHTML = '<div class="spinner"></div> Generando...';
   document.getElementById('create-status').style.display = 'flex';
   document.getElementById('create-results').style.display = 'none';
-  const elapsedTimer = startElapsedStatus('create-status-text', 'La IA está eligiendo y verificando canciones en Spotify...');
+  const statusText = document.getElementById('create-status-text');
+  statusText.textContent = 'Conectando con la IA…';
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 180000);
+    const timeoutId = setTimeout(() => controller.abort(), 270000);
     const r = await fetch('/api/create', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({name, mood, count, provider: aiConfig.provider, model: aiConfig.model}),
       signal: controller.signal
     });
+
+    if (!r.ok || !r.body) {
+      clearTimeout(timeoutId);
+      const data = await readApiResponse(r);
+      toast(data.error || `Error HTTP ${r.status}`, 'error');
+      return;
+    }
+
+    // Leemos el progreso en vivo (NDJSON: un evento JSON por línea).
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalData = null;
+    let streamError = null;
+
+    while (true) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, {stream: true});
+      let nl;
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        let ev;
+        try { ev = JSON.parse(line); } catch(_) { continue; }
+        if (ev.type === 'status') {
+          statusText.textContent = ev.message;
+        } else if (ev.type === 'progress') {
+          statusText.textContent = `Verificando canciones en Spotify… ${ev.done}/${ev.total} · ${ev.label}`;
+        } else if (ev.type === 'error') {
+          streamError = ev.error;
+        } else if (ev.type === 'done') {
+          finalData = ev;
+        }
+      }
+    }
     clearTimeout(timeoutId);
-    const data = await readApiResponse(r);
-    if (data.error) { toast(data.error, 'error'); return; }
+
+    if (streamError) { toast(streamError, 'error'); return; }
+    if (!finalData) { toast('La creación se interrumpió antes de terminar.', 'error'); return; }
+    const data = finalData;
 
     document.getElementById('create-status').style.display = 'none';
     document.getElementById('create-results').style.display = 'block';
@@ -689,7 +729,7 @@ async function createPlaylist() {
     const list = document.getElementById('create-result-list');
     list.innerHTML = [
       ...(data.timed_out ? [`<div class="result-item result-warn"><svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>Se alcanzó el límite de tiempo; se creó con las canciones verificadas.</div>`] : []),
-      ...data.added.map(s => `<div class="result-item result-ok"><svg viewBox="0 0 24 24" fill="var(--green)"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>${escapeHtml(s)}${(data.replacement_added || []).includes(s) ? ' <span style="color:var(--text-muted)">· reemplazo IA</span>' : ''}</div>`),
+      ...data.added.map(s => `<div class="result-item result-ok"><svg viewBox="0 0 24 24" fill="var(--green)"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>${escapeHtml(s)}${(data.substitutes || []).includes(s) ? ' <span style="color:var(--text-muted)">· sustituto (mismo artista)</span>' : ((data.replacement_added || []).includes(s) ? ' <span style="color:var(--text-muted)">· reemplazo IA</span>' : '')}</div>`),
       ...(data.rejected || []).map(s => `<div class="result-item result-warn"><svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>Rechazada por prompt: ${escapeHtml(s)}</div>`),
       ...data.not_found.map(s => `<div class="result-item result-fail"><svg viewBox="0 0 24 24" fill="var(--red)"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>No encontrada: ${escapeHtml(s)}</div>`)
     ].join('');
@@ -698,7 +738,6 @@ async function createPlaylist() {
   } catch(e) {
     toast(e.name === 'AbortError' ? 'La creación tardó demasiado y fue cancelada. Prueba con menos canciones o un modelo más rápido.' : (e.message || 'Error al crear la playlist'), 'error');
   } finally {
-    clearInterval(elapsedTimer);
     btn.disabled = false;
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px"><path d="M9 19V6l12-3v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="15" r="3"/></svg> Generar Playlist';
     document.getElementById('create-status').style.display = 'none';
