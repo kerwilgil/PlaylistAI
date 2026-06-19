@@ -1,6 +1,6 @@
 PASOS PARA USAR PLAYLISTAI
 
-1. En Spotify Developer Dashboard, abre tu app.
+1. En Spotify Developer Dashboard, abre o crea tu app.
 
 2. En Settings -> Redirect URIs, agrega exactamente:
 
@@ -8,33 +8,45 @@ PASOS PARA USAR PLAYLISTAI
 
    No uses localhost ni oauth.pstmn.io para esta app local.
 
-3. Revisa que el archivo .env tenga tus keys:
+3. IMPORTANTE: En Settings -> User Management, agrega tu correo/usuario de
+   Spotify. Una app nueva esta en "Development Mode" y solo deja entrar a las
+   cuentas que agregues ahi; si no, el login dara error.
+
+4. Revisa que el archivo .env tenga tus keys:
 
    SPOTIFY_CLIENT_ID=tu_client_id
    SPOTIFY_CLIENT_SECRET=tu_client_secret
    SPOTIFY_REDIRECT_URI=http://127.0.0.1:5000/callback
 
-   Tambien agrega al menos una key de IA si quieres analizar o crear playlists:
+   Tambien agrega al menos una key de IA para analizar o crear playlists:
 
    ANTHROPIC_API_KEY=tu_key
    OPENAI_API_KEY=tu_key
    NVIDIA_API_KEY=tu_key
 
-4. Haz doble clic en:
+5. Haz doble clic en:
 
    PlaylistAI.lnk
 
    Se abrira una ventana de PowerShell. Dejala abierta mientras uses la app.
 
-5. Abre la app en el navegador:
+6. Abre la app en el navegador:
 
    http://127.0.0.1:5000
 
    Tambien puedes hacer doble clic en index.html para que te mande a esa URL.
 
-6. Haz clic en "Conectar con Spotify" y acepta permisos.
+7. Haz clic en "Conectar con Spotify" y acepta permisos.
 
-7. Para cerrar la app, vuelve a la ventana de PowerShell y presiona:
+8. En "Crear con IA": escribe nombre, mood y cantidad, y dale Generar. Veras el
+   progreso en vivo (Verificando 1/30, 2/30...). Las canciones marcadas como
+   "sustituto (mismo artista)" son temas reales del artista pedido (la IA habia
+   inventado el titulo original).
+
+9. En "IA Config" puedes elegir proveedor y modelo. Por defecto usa el de mayor
+   calidad; cambia a uno mas rapido (ej. Claude Sonnet 4.6) si lo prefieres.
+
+10. Para cerrar la app, vuelve a la ventana de PowerShell y presiona:
 
    CTRL + C
 
@@ -42,6 +54,8 @@ NOTAS
 
 - No abras templates/index.html para usar la app. Ese archivo es una plantilla interna.
 - No cierres la ventana de PowerShell mientras estes usando PlaylistAI.
-- Si Spotify muestra error de redirect URI, revisa que en Spotify y en .env diga exactamente:
-
-  http://127.0.0.1:5000/callback
+- Si Spotify muestra error de redirect URI, revisa que en Spotify y en .env diga
+  exactamente: http://127.0.0.1:5000/callback
+- Si ves "Spotify limito las peticiones (429)", hiciste muchas peticiones seguidas
+  y Spotify bloqueo la app por un tiempo (por client_id). Espera un rato o usa otra
+  app con credenciales nuevas.
