@@ -1,0 +1,47 @@
+PASOS PARA USAR PLAYLISTAI
+
+1. En Spotify Developer Dashboard, abre tu app.
+
+2. En Settings -> Redirect URIs, agrega exactamente:
+
+   http://127.0.0.1:5000/callback
+
+   No uses localhost ni oauth.pstmn.io para esta app local.
+
+3. Revisa que el archivo .env tenga tus keys:
+
+   SPOTIFY_CLIENT_ID=tu_client_id
+   SPOTIFY_CLIENT_SECRET=tu_client_secret
+   SPOTIFY_REDIRECT_URI=http://127.0.0.1:5000/callback
+
+   Tambien agrega al menos una key de IA si quieres analizar o crear playlists:
+
+   ANTHROPIC_API_KEY=tu_key
+   OPENAI_API_KEY=tu_key
+   NVIDIA_API_KEY=tu_key
+
+4. Haz doble clic en:
+
+   PlaylistAI.lnk
+
+   Se abrira una ventana de PowerShell. Dejala abierta mientras uses la app.
+
+5. Abre la app en el navegador:
+
+   http://127.0.0.1:5000
+
+   Tambien puedes hacer doble clic en index.html para que te mande a esa URL.
+
+6. Haz clic en "Conectar con Spotify" y acepta permisos.
+
+7. Para cerrar la app, vuelve a la ventana de PowerShell y presiona:
+
+   CTRL + C
+
+NOTAS
+
+- No abras templates/index.html para usar la app. Ese archivo es una plantilla interna.
+- No cierres la ventana de PowerShell mientras estes usando PlaylistAI.
+- Si Spotify muestra error de redirect URI, revisa que en Spotify y en .env diga exactamente:
+
+  http://127.0.0.1:5000/callback

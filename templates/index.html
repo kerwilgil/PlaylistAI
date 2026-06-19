@@ -1,0 +1,797 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlaylistAI — Curador Musical</title>
+<link rel="icon" href="data:,">
+<script>
+  if (window.location.protocol === 'file:') {
+    window.location.replace('http://127.0.0.1:5000');
+  }
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-base:        #0a0a0a;
+    --bg-surface:     #111111;
+    --bg-raised:      #1a1a1a;
+    --bg-card:        #161616;
+    --border:         rgba(255,255,255,0.07);
+    --border-strong:  rgba(255,255,255,0.14);
+    --text-primary:   #f1f1f1;
+    --text-secondary: #a0a0a0;
+    --text-muted:     #5a5a5a;
+    --green:          #1DB954;
+    --green-hover:    #1ed760;
+    --green-subtle:   rgba(29,185,84,0.12);
+    --red:            #e8453c;
+    --red-subtle:     rgba(232,69,60,0.10);
+    --amber:          #f59e0b;
+    --amber-subtle:   rgba(245,158,11,0.10);
+    --radius-sm:      8px;
+    --radius-md:      12px;
+    --radius-lg:      16px;
+    --radius-xl:      24px;
+    --font:           Inter, "Segoe UI", Arial, sans-serif;
+  }
+
+  html, body { height: 100%; background: var(--bg-base); color: var(--text-primary); font-family: var(--font); }
+
+  /* ── LAYOUT ── */
+  .shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border);
+    padding: 28px 20px;
+    display: flex; flex-direction: column; gap: 8px;
+    position: sticky; top: 0; height: 100vh;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; padding: 0 8px 24px; }
+  .logo svg { width: 28px; height: 28px; fill: var(--green); }
+  .logo-text { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
+  .logo-text span { color: var(--green); }
+
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: var(--radius-sm);
+    font-size: 14px; font-weight: 500; color: var(--text-secondary);
+    cursor: pointer; transition: all 150ms ease; border: none; background: none;
+    width: 100%; text-align: left;
+  }
+  .nav-item:hover { background: var(--bg-raised); color: var(--text-primary); }
+  .nav-item.active { background: var(--green-subtle); color: var(--green); }
+  .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+  .sidebar-bottom { margin-top: auto; }
+  .user-chip {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: var(--radius-sm);
+    background: var(--bg-raised);
+  }
+  .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--green); object-fit: cover; }
+  .user-name { font-size: 13px; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .logout-btn { font-size: 12px; color: var(--text-muted); cursor: pointer; text-decoration: none; }
+  .logout-btn:hover { color: var(--text-secondary); }
+
+  /* ── MAIN ── */
+  .main { overflow-y: auto; }
+
+  .page { display: none; padding: 40px 48px; max-width: 900px; }
+  .page.active { display: block; }
+
+  .page-header { margin-bottom: 32px; }
+  .page-title { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+  .page-subtitle { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+
+  /* ── HERO / LOGIN ── */
+  .hero {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; text-align: center; padding: 40px;
+  }
+  .hero-icon { margin-bottom: 24px; }
+  .hero-icon svg { width: 64px; height: 64px; fill: var(--green); }
+  .hero h1 { font-size: 40px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 12px; }
+  .hero h1 span { color: var(--green); }
+  .hero p { font-size: 16px; color: var(--text-secondary); max-width: 420px; line-height: 1.6; margin-bottom: 32px; }
+  .auth-alert {
+    max-width: 520px; margin: -12px 0 24px; padding: 12px 16px;
+    border: 1px solid rgba(232,69,60,0.28); border-radius: var(--radius-md);
+    background: var(--red-subtle); color: var(--text-primary);
+    font-size: 14px; line-height: 1.5; text-align: left;
+  }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 20px; border-radius: 500px; font-family: var(--font);
+    font-size: 14px; font-weight: 600; cursor: pointer; border: none;
+    transition: all 150ms ease; text-decoration: none;
+  }
+  .btn-green { background: var(--green); color: #000; }
+  .btn-green:hover { background: var(--green-hover); transform: scale(1.02); }
+  .btn-outline { background: transparent; color: var(--text-primary); border: 1px solid var(--border-strong); }
+  .btn-outline:hover { background: var(--bg-raised); border-color: var(--text-muted); }
+  .btn-ghost { background: transparent; color: var(--text-secondary); }
+  .btn-ghost:hover { color: var(--text-primary); }
+  .btn-sm { padding: 7px 14px; font-size: 13px; }
+  .btn-danger { background: var(--red-subtle); color: var(--red); border: 1px solid rgba(232,69,60,0.2); }
+  .btn-danger:hover { background: rgba(232,69,60,0.18); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* ── INPUT ── */
+  .input-group { margin-bottom: 20px; }
+  .input-label { font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-bottom: 8px; display: block; }
+  .input {
+    width: 100%; background: var(--bg-raised); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 11px 16px;
+    font-family: var(--font); font-size: 14px; color: var(--text-primary);
+    transition: border-color 150ms ease, box-shadow 150ms ease; outline: none;
+  }
+  .input:hover { border-color: var(--border-strong); }
+  .input:focus { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-subtle); }
+  .input::placeholder { color: var(--text-muted); }
+  textarea.input { resize: vertical; min-height: 80px; line-height: 1.5; }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 24px;
+  }
+  .card + .card { margin-top: 16px; }
+
+  /* ── TRACK LIST ── */
+  .track-list { display: flex; flex-direction: column; gap: 4px; }
+  .track-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: var(--radius-sm);
+    transition: background 150ms ease;
+  }
+  .track-item:hover { background: var(--bg-raised); }
+  .track-num { font-size: 13px; color: var(--text-muted); width: 20px; text-align: right; font-feature-settings: "tnum"; flex-shrink: 0; }
+  .track-info { flex: 1; min-width: 0; }
+  .track-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-artist { font-size: 13px; color: var(--text-secondary); }
+  .track-badge {
+    font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 500px;
+    flex-shrink: 0; letter-spacing: 0.03em;
+  }
+  .badge-remove { background: var(--red-subtle); color: var(--red); }
+  .badge-add { background: var(--green-subtle); color: var(--green); }
+  .badge-ok { background: rgba(255,255,255,0.05); color: var(--text-muted); }
+
+  .track-checkbox { width: 16px; height: 16px; accent-color: var(--green); cursor: pointer; flex-shrink: 0; }
+
+  /* ── AI SUMMARY ── */
+  .ai-summary {
+    background: var(--green-subtle); border: 1px solid rgba(29,185,84,0.2);
+    border-radius: var(--radius-md); padding: 16px 20px; margin-bottom: 20px;
+    font-size: 14px; line-height: 1.6; color: var(--text-primary);
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .ai-summary svg { width: 18px; height: 18px; fill: var(--green); flex-shrink: 0; margin-top: 1px; }
+
+  /* ── SECTION HEADER ── */
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .section-title { font-size: 15px; font-weight: 600; }
+  .section-count { font-size: 13px; color: var(--text-muted); }
+
+  /* ── STATUS ── */
+  .status-bar {
+    background: var(--bg-raised); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 14px 20px; margin-bottom: 20px;
+    font-size: 14px; display: flex; align-items: center; gap: 10px;
+  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.loading { background: var(--amber); animation: pulse 1.2s ease infinite; }
+  .status-dot.success { background: var(--green); }
+  .status-dot.error { background: var(--red); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* ── RESULT CHIPS ── */
+  .result-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .result-item {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; padding: 8px 12px; border-radius: var(--radius-sm);
+    background: var(--bg-raised);
+  }
+  .result-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .result-ok svg { fill: var(--green); }
+  .result-fail svg { fill: var(--red); }
+  .result-warn svg { fill: var(--amber); }
+
+  /* ── TABS ── */
+  .tabs { display: flex; gap: 4px; margin-bottom: 28px; background: var(--bg-raised); border-radius: var(--radius-md); padding: 4px; width: fit-content; }
+  .tab { padding: 8px 18px; border-radius: var(--radius-sm); font-size: 14px; font-weight: 500; color: var(--text-secondary); cursor: pointer; transition: all 150ms ease; border: none; background: none; font-family: var(--font); }
+  .tab.active { background: var(--bg-surface); color: var(--text-primary); }
+  .tab:hover:not(.active) { color: var(--text-primary); }
+
+  /* ── PLAYLIST HEADER CARD ── */
+  .pl-header { display: flex; gap: 20px; align-items: center; margin-bottom: 24px; }
+  .pl-cover { width: 80px; height: 80px; border-radius: var(--radius-md); background: var(--green-subtle); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .pl-cover svg { width: 36px; height: 36px; fill: var(--green); }
+  .pl-name { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
+  .pl-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+  .pl-meta { font-size: 12px; color: var(--text-muted); }
+
+  /* ── SPINNER ── */
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.15); border-top-color: var(--green); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── DIVIDER ── */
+  .divider { height: 1px; background: var(--border); margin: 20px 0; }
+
+  /* ── EMPTY ── */
+  .empty { text-align: center; padding: 48px 24px; color: var(--text-muted); font-size: 14px; }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--bg-raised); border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md); padding: 14px 20px;
+    font-size: 14px; z-index: 999; display: none;
+    animation: slideUp 200ms ease;
+    max-width: 340px;
+  }
+  .toast.show { display: flex; align-items: center; gap: 10px; }
+  .toast.success { border-color: rgba(29,185,84,0.3); }
+  .toast.error { border-color: rgba(232,69,60,0.3); }
+  @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 768px) {
+    .shell { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .page { padding: 24px 20px; }
+  }
+</style>
+</head>
+<body>
+
+{% if not logged_in %}
+<!-- ── LOGIN SCREEN ── -->
+<div class="hero">
+  <div class="hero-icon">
+    <svg viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+  </div>
+  <h1>Playlist<span>AI</span></h1>
+  <p>Analiza, mejora y crea playlists de Spotify con inteligencia artificial. Conecta tu cuenta y empieza.</p>
+  {% if auth_error %}
+  <div class="auth-alert">{{ auth_error }}</div>
+  {% endif %}
+  <a href="/login" class="btn btn-green">
+    <svg style="width:18px;height:18px;fill:#000" viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+    Conectar con Spotify
+  </a>
+</div>
+
+{% else %}
+<!-- ── DASHBOARD ── -->
+<div class="shell">
+  <aside class="sidebar">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+      <span class="logo-text">Playlist<span>AI</span></span>
+    </div>
+
+    <button class="nav-item active" onclick="showPage('analyze')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      Analizar Playlist
+    </button>
+    <button class="nav-item" onclick="showPage('create')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      Crear con IA
+    </button>
+    <button class="nav-item" onclick="showPage('settings')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+      IA Config
+    </button>
+
+    <div class="sidebar-bottom">
+      <div class="user-chip">
+        <img class="user-avatar" id="user-avatar" src="" onerror="this.style.display='none'">
+        <span class="user-name" id="user-name">...</span>
+        <a href="/logout" class="logout-btn">Salir</a>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <!-- ── PAGE: ANALYZE ── -->
+    <div class="page active" id="page-analyze">
+      <div class="page-header">
+        <div class="page-title">Analizar Playlist</div>
+        <div class="page-subtitle">Pega el link de cualquier playlist de Spotify y la IA detecta qué mejorar.</div>
+      </div>
+
+      <div class="card" id="analyze-form-card">
+        <div class="input-group">
+          <label class="input-label">Link de la playlist</label>
+          <input class="input" id="playlist-url" type="text" placeholder="https://open.spotify.com/playlist/...">
+        </div>
+        <button class="btn btn-green" id="analyze-btn" onclick="analyzePlaylist()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px"><path d="M12 5v14M5 12h14"/><circle cx="12" cy="12" r="10"/></svg>
+          Analizar con IA
+        </button>
+      </div>
+
+      <div id="analyze-status" style="display:none" class="status-bar">
+        <div class="status-dot loading"></div>
+        <span id="analyze-status-text">Analizando playlist...</span>
+      </div>
+
+      <div id="analyze-results" style="display:none">
+        <!-- Playlist header -->
+        <div class="pl-header">
+          <div class="pl-cover">
+            <svg viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+          </div>
+          <div>
+            <div class="pl-name" id="res-pl-name"></div>
+            <div class="pl-desc" id="res-pl-desc"></div>
+            <div class="pl-meta" id="res-pl-meta"></div>
+          </div>
+        </div>
+
+        <div class="ai-summary" id="res-summary">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          <span id="res-summary-text"></span>
+        </div>
+
+        <!-- Remove suggestions -->
+        <div class="card" id="res-remove-card">
+          <div class="section-header">
+            <div class="section-title">🗑️ Canciones a eliminar</div>
+            <div class="section-count" id="res-remove-count"></div>
+          </div>
+          <div class="track-list" id="res-remove-list"></div>
+        </div>
+
+        <!-- Add suggestions -->
+        <div class="card" id="res-add-card">
+          <div class="section-header">
+            <div class="section-title">✨ Canciones sugeridas</div>
+            <div class="section-count" id="res-add-count"></div>
+          </div>
+          <div class="track-list" id="res-add-list"></div>
+        </div>
+
+        <div style="margin-top:20px;display:flex;gap:12px;align-items:center">
+          <button class="btn btn-green" id="apply-btn" onclick="applyChanges()">
+            Aplicar cambios seleccionados
+          </button>
+          <button class="btn btn-outline" onclick="resetAnalyze()">Analizar otra</button>
+        </div>
+      </div>
+
+      <!-- Apply results -->
+      <div id="apply-results" style="display:none">
+        <div class="status-bar" id="apply-status-bar">
+          <div class="status-dot success" id="apply-dot"></div>
+          <span id="apply-status-text">Cambios aplicados</span>
+        </div>
+        <div class="result-list" id="apply-result-list"></div>
+        <div style="margin-top:20px;display:flex;gap:12px">
+          <button class="btn btn-green" onclick="resetAnalyze()">Analizar otra playlist</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PAGE: CREATE ── -->
+    <div class="page" id="page-create">
+      <div class="page-header">
+        <div class="page-title">Crear Playlist con IA</div>
+        <div class="page-subtitle">Describe el mood o tema y la IA genera la playlist perfecta directo en tu Spotify.</div>
+      </div>
+
+      <div class="card" id="create-form-card">
+        <div class="input-group">
+          <label class="input-label">Nombre de la playlist</label>
+          <input class="input" id="create-name" type="text" placeholder="Ej: Late Night Coding · Dark Mode">
+        </div>
+        <div class="input-group">
+          <label class="input-label">Describe el mood / concepto</label>
+          <textarea class="input" id="create-mood" placeholder="Ej: Música instrumental oscura y profunda para programar de noche. Deep techno, ambient, post-rock sin voces. Lenta, concentrada, inmersiva."></textarea>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Cantidad de canciones</label>
+          <input class="input" id="create-count" type="number" value="15" min="5" max="50" style="max-width:120px">
+        </div>
+        <button class="btn btn-green" id="create-btn" onclick="createPlaylist()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px"><path d="M9 19V6l12-3v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="15" r="3"/></svg>
+          Generar Playlist
+        </button>
+      </div>
+
+      <div id="create-status" style="display:none" class="status-bar">
+        <div class="status-dot loading"></div>
+        <span id="create-status-text">Generando playlist con IA...</span>
+      </div>
+
+      <div id="create-results" style="display:none">
+        <div class="status-bar">
+          <div class="status-dot success"></div>
+          <span id="create-result-text"></span>
+        </div>
+        <div class="result-list" id="create-result-list"></div>
+        <div style="margin-top:20px;display:flex;gap:12px;flex-wrap:wrap">
+          <a id="open-playlist-btn" href="#" target="_blank" class="btn btn-green">Abrir en Spotify</a>
+          <button class="btn btn-outline" onclick="resetCreate()">Crear otra</button>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ── PAGE: SETTINGS ── -->
+    <div class="page" id="page-settings">
+      <div class="page-header">
+        <div class="page-title">Configuración de IA</div>
+        <div class="page-subtitle">Elige el proveedor y modelo que se usará para analizar y crear playlists.</div>
+      </div>
+      <div class="card" id="providers-card">
+        <div style="color:var(--text-muted);font-size:14px;padding:24px;text-align:center">
+          <div class="spinner"></div>
+          <div style="margin-top:12px">Cargando proveedores...</div>
+        </div>
+      </div>
+      <div style="margin-top:16px" id="model-select-wrap" style="display:none">
+        <div class="card">
+          <div class="input-group" style="margin-bottom:0">
+            <label class="input-label">Modelo</label>
+            <select class="input" id="model-select"></select>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:20px">
+        <button class="btn btn-green" onclick="saveProviderSettings()">Guardar configuración</button>
+      </div>
+      <div id="settings-saved" style="display:none;margin-top:16px" class="status-bar">
+        <div class="status-dot success"></div>
+        <span>Configuración guardada. Se usará en el próximo análisis.</span>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let analyzeData = null;
+
+// ── INIT ──
+async function init() {
+  try {
+    const r = await fetch('/api/me');
+    const u = await r.json();
+    document.getElementById('user-name').textContent = u.name || 'Usuario';
+    if (u.image) document.getElementById('user-avatar').src = u.image;
+  } catch(e) {}
+}
+init();
+
+// ── NAV ──
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+// ── TOAST ──
+function toast(msg, type='success') {
+  const el = document.getElementById('toast');
+  const safeMsg = escapeHtml(msg);
+  el.className = 'toast show ' + type;
+  el.innerHTML = type === 'success'
+    ? `<svg style="width:16px;height:16px;fill:#1DB954;flex-shrink:0" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>${safeMsg}`
+    : `<svg style="width:16px;height:16px;fill:#e8453c;flex-shrink:0" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>${safeMsg}`;
+  setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+async function readApiResponse(response) {
+  const text = await response.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch(e) {
+    const preview = text.replace(/\s+/g, ' ').slice(0, 240);
+    return {error: `Respuesta inválida (${response.status}): ${preview || 'sin contenido'}`};
+  }
+  if (!response.ok && !data.error) {
+    data.error = `Error HTTP ${response.status}`;
+  }
+  return data;
+}
+
+function startElapsedStatus(elementId, message) {
+  const el = document.getElementById(elementId);
+  const startedAt = Date.now();
+  el.textContent = `${message} 0s`;
+  return setInterval(() => {
+    const seconds = Math.floor((Date.now() - startedAt) / 1000);
+    el.textContent = `${message} ${seconds}s`;
+  }, 1000);
+}
+
+// ── ANALYZE ──
+async function analyzePlaylist() {
+  const url = document.getElementById('playlist-url').value.trim();
+  if (!url) { toast('Pega el link de la playlist', 'error'); return; }
+
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Analizando...';
+  document.getElementById('analyze-status').style.display = 'flex';
+  document.getElementById('analyze-results').style.display = 'none';
+  document.getElementById('apply-results').style.display = 'none';
+
+  try {
+    const r = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url, provider: aiConfig.provider, model: aiConfig.model})
+    });
+    const data = await readApiResponse(r);
+    if (data.error) { toast(data.error, 'error'); return; }
+    analyzeData = data;
+    renderAnalyzeResults(data);
+  } catch(e) {
+    toast(e.message || 'Error al analizar. Intenta de nuevo.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px"><path d="M12 5v14M5 12h14"/><circle cx="12" cy="12" r="10"/></svg> Analizar con IA';
+    document.getElementById('analyze-status').style.display = 'none';
+  }
+}
+
+function renderAnalyzeResults(data) {
+  document.getElementById('res-pl-name').textContent = data.playlist_name;
+  document.getElementById('res-pl-desc').textContent = data.playlist_description || '';
+  document.getElementById('res-pl-meta').textContent = `${data.tracks.length} canciones`;
+  document.getElementById('res-summary-text').textContent = data.ai.summary || '';
+
+  // Remove list
+  const removeList = document.getElementById('res-remove-list');
+  const removeItems = data.ai.remove || [];
+  document.getElementById('res-remove-count').textContent = `${removeItems.length} sugerida${removeItems.length !== 1 ? 's' : ''}`;
+  removeList.innerHTML = removeItems.length === 0
+    ? '<div class="empty">Ninguna canción fuera de lugar ✓</div>'
+    : removeItems.map((t, i) => `
+      <div class="track-item">
+        <input type="checkbox" class="track-checkbox" id="rm-${i}" checked data-index="${i}">
+        <div class="track-info">
+          <div class="track-name">${escapeHtml(t.name)}</div>
+          <div class="track-artist">${escapeHtml(t.artist)} · <span style="color:var(--text-muted)">${escapeHtml(t.reason)}</span></div>
+        </div>
+        <span class="track-badge badge-remove">Quitar</span>
+      </div>`).join('');
+
+  // Add list
+  const addList = document.getElementById('res-add-list');
+  const addItems = data.ai.add || [];
+  document.getElementById('res-add-count').textContent = `${addItems.length} sugerida${addItems.length !== 1 ? 's' : ''}`;
+  addList.innerHTML = addItems.map((t, i) => `
+    <div class="track-item">
+      <input type="checkbox" class="track-checkbox" id="add-${i}" checked data-index="${i}">
+      <div class="track-info">
+        <div class="track-name">${escapeHtml(t.name)}</div>
+        <div class="track-artist">${escapeHtml(t.artist)} · <span style="color:var(--text-muted)">${escapeHtml(t.reason)}</span></div>
+      </div>
+      <span class="track-badge badge-add">Agregar</span>
+    </div>`).join('');
+
+  document.getElementById('analyze-results').style.display = 'block';
+}
+
+async function applyChanges() {
+  if (!analyzeData) return;
+
+  const removeChecked = [...document.querySelectorAll('[id^="rm-"]:checked')]
+    .map(cb => analyzeData.ai.remove[parseInt(cb.dataset.index)]);
+  const addChecked = [...document.querySelectorAll('[id^="add-"]:checked')]
+    .map(cb => analyzeData.ai.add[parseInt(cb.dataset.index)]);
+
+  if (removeChecked.length === 0 && addChecked.length === 0) {
+    toast('Selecciona al menos un cambio', 'error'); return;
+  }
+
+  const btn = document.getElementById('apply-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Aplicando...';
+
+  try {
+    const r = await fetch('/api/apply', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        playlist_id: analyzeData.playlist_id,
+        remove: removeChecked,
+        add: addChecked
+      })
+    });
+    const result = await readApiResponse(r);
+    if (result.error) { toast(result.error, 'error'); return; }
+
+    document.getElementById('analyze-results').style.display = 'none';
+    document.getElementById('apply-results').style.display = 'block';
+
+    const total = result.removed.length + result.added.length;
+    document.getElementById('apply-status-text').textContent = `${total} cambio${total !== 1 ? 's' : ''} aplicado${total !== 1 ? 's' : ''} en "${analyzeData.playlist_name}"`;
+
+    const list = document.getElementById('apply-result-list');
+    list.innerHTML = [
+      ...result.removed.map(s => `<div class="result-item result-ok"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>Eliminada: ${escapeHtml(s)}</div>`),
+      ...result.added.map(s => `<div class="result-item result-ok"><svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>Agregada: ${escapeHtml(s)}</div>`),
+      ...result.not_found.map(s => `<div class="result-item result-fail"><svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>No encontrada: ${escapeHtml(s)}</div>`)
+    ].join('');
+
+    toast('¡Playlist actualizada!');
+  } catch(e) {
+    toast('Error al aplicar cambios', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Aplicar cambios seleccionados';
+  }
+}
+
+function resetAnalyze() {
+  analyzeData = null;
+  document.getElementById('playlist-url').value = '';
+  document.getElementById('analyze-results').style.display = 'none';
+  document.getElementById('apply-results').style.display = 'none';
+}
+
+// ── CREATE ──
+async function createPlaylist() {
+  const name = document.getElementById('create-name').value.trim();
+  const mood = document.getElementById('create-mood').value.trim();
+  const count = document.getElementById('create-count').value;
+
+  if (!name || !mood) { toast('Completa nombre y descripción', 'error'); return; }
+
+  const btn = document.getElementById('create-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Generando...';
+  document.getElementById('create-status').style.display = 'flex';
+  document.getElementById('create-results').style.display = 'none';
+  const elapsedTimer = startElapsedStatus('create-status-text', 'La IA está eligiendo y verificando canciones en Spotify...');
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 180000);
+    const r = await fetch('/api/create', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, mood, count, provider: aiConfig.provider, model: aiConfig.model}),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const data = await readApiResponse(r);
+    if (data.error) { toast(data.error, 'error'); return; }
+
+    document.getElementById('create-status').style.display = 'none';
+    document.getElementById('create-results').style.display = 'block';
+    document.getElementById('create-result-text').textContent =
+      `"${data.playlist_name}" creada con ${data.added.length}${data.target_count ? ` de ${data.target_count}` : ''} canciones`;
+    document.getElementById('open-playlist-btn').href = data.playlist_url;
+
+    const list = document.getElementById('create-result-list');
+    list.innerHTML = [
+      ...(data.timed_out ? [`<div class="result-item result-warn"><svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>Se alcanzó el límite de tiempo; se creó con las canciones verificadas.</div>`] : []),
+      ...data.added.map(s => `<div class="result-item result-ok"><svg viewBox="0 0 24 24" fill="var(--green)"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>${escapeHtml(s)}${(data.replacement_added || []).includes(s) ? ' <span style="color:var(--text-muted)">· reemplazo IA</span>' : ''}</div>`),
+      ...(data.rejected || []).map(s => `<div class="result-item result-warn"><svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>Rechazada por prompt: ${escapeHtml(s)}</div>`),
+      ...data.not_found.map(s => `<div class="result-item result-fail"><svg viewBox="0 0 24 24" fill="var(--red)"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>No encontrada: ${escapeHtml(s)}</div>`)
+    ].join('');
+
+    toast('¡Playlist creada y lista en Spotify!');
+  } catch(e) {
+    toast(e.name === 'AbortError' ? 'La creación tardó demasiado y fue cancelada. Prueba con menos canciones o un modelo más rápido.' : (e.message || 'Error al crear la playlist'), 'error');
+  } finally {
+    clearInterval(elapsedTimer);
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px"><path d="M9 19V6l12-3v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="15" r="3"/></svg> Generar Playlist';
+    document.getElementById('create-status').style.display = 'none';
+  }
+}
+
+function resetCreate() {
+  document.getElementById('create-name').value = '';
+  document.getElementById('create-mood').value = '';
+  document.getElementById('create-count').value = '15';
+  document.getElementById('create-results').style.display = 'none';
+}
+
+// ── PROVIDER SETTINGS ──
+let aiConfig = { provider: localStorage.getItem('ai_provider') || 'anthropic', model: localStorage.getItem('ai_model') || null };
+let providersData = {};
+
+async function loadProviders() {
+  try {
+    const r = await fetch('/api/providers');
+    providersData = await r.json();
+    renderProviders();
+  } catch(e) {}
+}
+
+function renderProviders() {
+  const card = document.getElementById('providers-card');
+  const available = Object.entries(providersData).filter(([,p]) => p.available);
+  const unavailable = Object.entries(providersData).filter(([,p]) => !p.available);
+
+  if (available.length === 0) {
+    card.innerHTML = '<div class="empty">No hay ninguna API key configurada en start.sh</div>';
+    return;
+  }
+
+  if (!providersData[aiConfig.provider]?.available) {
+    aiConfig.provider = available[0][0];
+    aiConfig.model = null;
+    localStorage.setItem('ai_provider', aiConfig.provider);
+    localStorage.removeItem('ai_model');
+  }
+
+  card.innerHTML = `
+    <div class="section-title" style="margin-bottom:16px">Proveedor</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${available.map(([key, p]) => `
+        <label style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--radius-md);border:1px solid ${aiConfig.provider===key ? 'var(--green)' : 'var(--border)'};background:${aiConfig.provider===key ? 'var(--green-subtle)' : 'var(--bg-raised)'};cursor:pointer;transition:all 150ms ease">
+          <input type="radio" name="provider" value="${key}" ${aiConfig.provider===key ? 'checked' : ''} onchange="onProviderChange('${key}')" style="accent-color:var(--green)">
+          <span style="font-size:14px;font-weight:500">${p.name}</span>
+          <span style="font-size:12px;color:var(--green);margin-left:auto">✓ Activo</span>
+        </label>`).join('')}
+      ${unavailable.map(([key, p]) => `
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--border);opacity:0.4">
+          <input type="radio" name="provider" value="${key}" disabled>
+          <span style="font-size:14px;font-weight:500">${p.name}</span>
+          <span style="font-size:12px;color:var(--text-muted);margin-left:auto">Sin API key</span>
+        </div>`).join('')}
+    </div>`;
+
+  updateModelSelect(aiConfig.provider);
+}
+
+function onProviderChange(key) {
+  aiConfig.provider = key;
+  aiConfig.model = null;
+  renderProviders();
+}
+
+function updateModelSelect(provider) {
+  const wrap = document.getElementById('model-select-wrap');
+  const sel = document.getElementById('model-select');
+  const prov = providersData[provider];
+  if (!prov || !prov.models) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  sel.innerHTML = prov.models.map(m =>
+    `<option value="${m.id}" ${aiConfig.model === m.id ? 'selected' : ''}>${m.label}</option>`
+  ).join('');
+  if (!aiConfig.model) aiConfig.model = prov.models[0].id;
+}
+
+function saveProviderSettings() {
+  aiConfig.model = document.getElementById('model-select').value;
+  localStorage.setItem('ai_provider', aiConfig.provider);
+  localStorage.setItem('ai_model', aiConfig.model);
+  document.getElementById('settings-saved').style.display = 'flex';
+  setTimeout(() => document.getElementById('settings-saved').style.display = 'none', 3000);
+}
+
+// Load providers on init
+loadProviders();
+</script>
+{% endif %}
+</body>
+</html>
+
+
