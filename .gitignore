@@ -1,0 +1,15 @@
+.env
+.cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.log
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.lnk
+Thumbs.db
+.DS_Store
