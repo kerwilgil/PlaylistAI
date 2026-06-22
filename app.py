@@ -152,7 +152,7 @@ def extract_playlist_id(url_or_id):
     return match.group(1) if match else url_or_id.strip()
 
 def get_playlist_for_analysis(sp, playlist_id):
-    pl = sp.playlist(playlist_id, fields="id,name,description,tracks.total")
+    pl = sp.playlist(playlist_id, fields="id,name,description,tracks.total,owner.id,owner.display_name")
     items = []
     offset = 0
     limit = 100
@@ -458,6 +458,13 @@ def api_analyze():
     # Fetch playlist info
     try:
         pl, tracks = get_playlist_for_analysis(sp, playlist_id)
+    except SpotifyException as e:
+        status = getattr(e, "http_status", None)
+        if status == 404:
+            return jsonify({"error": "Spotify no encontró esa playlist (404). Suele pasar con las playlists creadas por Spotify (Discover Weekly, Top 50, Radar, 'This Is…', Daily Mix): Spotify bloquea su acceso por API para apps en modo desarrollo. Usa una playlist tuya o de otro usuario, con su link completo (open.spotify.com/playlist/...)."}), 400
+        if status == 401:
+            return jsonify({"error": "Tu sesión de Spotify expiró. Dale 'Salir' y vuelve a conectar."}), 401
+        return jsonify({"error": f"No se pudo cargar la playlist: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"error": f"No se pudo cargar la playlist: {str(e)}"}), 400
 
@@ -482,7 +489,12 @@ def api_analyze():
         })
     if not track_list:
         total = pl.get("tracks", {}).get("total", 0)
-        return jsonify({"error": f"Spotify devolvió {total} items, pero ninguno era una canción reproducible con nombre y URI. Revisa que sea una URL de playlist musical, no álbum/podcast/carpeta, y que tengas permiso para verla."}), 400
+        owner_id = (pl.get("owner") or {}).get("id", "")
+        if owner_id == "spotify":
+            return jsonify({"error": "Esta playlist es creada por Spotify (editorial/algorítmica) y Spotify bloquea su contenido por API para apps en modo desarrollo, por eso llega vacía. Analiza una playlist tuya o de otro usuario."}), 400
+        if total == 0:
+            return jsonify({"error": "La playlist está vacía (0 canciones). Analiza una que tenga canciones agregadas."}), 400
+        return jsonify({"error": f"Spotify devolvió {total} items pero ninguno era una canción reproducible (pueden ser episodios de podcast, archivos locales o no disponibles en tu país). Prueba con otra playlist."}), 400
 
     # Ask Claude to analyze
     ai_track_sample = track_list[:120]
