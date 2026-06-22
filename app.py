@@ -152,7 +152,17 @@ def extract_playlist_id(url_or_id):
     return match.group(1) if match else url_or_id.strip()
 
 def get_playlist_for_analysis(sp, playlist_id):
-    pl = sp.playlist(playlist_id, fields="id,name,description,tracks.total,owner.id,owner.display_name")
+    # IMPORTANTE: sin el parámetro `market`, la API de Spotify devuelve los tracks
+    # como null (item.track = null). Hay que pasar el país del usuario.
+    try:
+        market = sp.me().get("country") or "US"
+    except Exception:
+        market = "US"
+    pl = sp.playlist(
+        playlist_id,
+        fields="id,name,description,tracks.total,owner.id,owner.display_name",
+        market=market,
+    )
     items = []
     offset = 0
     limit = 100
@@ -161,6 +171,7 @@ def get_playlist_for_analysis(sp, playlist_id):
             playlist_id,
             limit=limit,
             offset=offset,
+            market=market,
         )
         items.extend(page.get("items", []))
         if not page.get("next"):
