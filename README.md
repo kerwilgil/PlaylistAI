@@ -36,7 +36,7 @@ contra el catálogo real antes de crearla.
 3. **Importante (Development Mode):** una app nueva solo permite cuentas que
    agregues a mano. Ve a `Settings -> User Management` y agrega tu correo/usuario de
    Spotify, o el login dará error.
-4. Crea un archivo `.env` basado en `.env.example`:
+4. Revisa el archivo `.env` basado en `.env.example`:
 
    ```text
    SPOTIFY_CLIENT_ID=tu_client_id
@@ -48,7 +48,9 @@ contra el catálogo real antes de crearla.
    NVIDIA_API_KEY=
    ```
 
-   Basta **una** API key de IA para usar las funciones de análisis/creación.
+   Si `.env` no existe, los scripts de arranque lo crean automaticamente desde
+   `.env.example`. Basta **una** API key de IA para usar las funciones de
+   análisis/creación.
 
 ## Ejecutar
 
@@ -56,6 +58,18 @@ En Windows PowerShell:
 
 ```powershell
 .\start.ps1
+```
+
+En Windows por doble clic:
+
+```text
+start.cmd
+```
+
+En macOS por doble clic:
+
+```text
+start.command
 ```
 
 En bash:
@@ -66,9 +80,9 @@ bash start.sh
 
 Luego abre <http://127.0.0.1:5000> y conecta tu cuenta de Spotify.
 
-> El arranque usa [`uv`](https://docs.astral.sh/uv/) y descarga las dependencias
-> (`flask`, `spotipy`, `requests`) automáticamente. También puedes instalarlas con
-> `pip install -r requirements.txt` y correr `python app.py`.
+> Si [`uv`](https://docs.astral.sh/uv/) esta instalado, el arranque lo usa para
+> resolver dependencias automaticamente. Si no, crea un entorno local `.venv`,
+> instala `requirements.txt` con `pip` y corre `python app.py`.
 
 ## Modelos por defecto
 
