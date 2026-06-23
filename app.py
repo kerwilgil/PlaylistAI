@@ -152,17 +152,7 @@ def extract_playlist_id(url_or_id):
     return match.group(1) if match else url_or_id.strip()
 
 def get_playlist_for_analysis(sp, playlist_id):
-    # IMPORTANTE: sin el parámetro `market`, la API de Spotify devuelve los tracks
-    # como null (item.track = null). Hay que pasar el país del usuario.
-    try:
-        market = sp.me().get("country") or "US"
-    except Exception:
-        market = "US"
-    pl = sp.playlist(
-        playlist_id,
-        fields="id,name,description,tracks.total,owner.id,owner.display_name",
-        market=market,
-    )
+    pl = sp.playlist(playlist_id, fields="id,name,description,tracks.total,owner.id,owner.display_name")
     items = []
     offset = 0
     limit = 100
@@ -171,7 +161,6 @@ def get_playlist_for_analysis(sp, playlist_id):
             playlist_id,
             limit=limit,
             offset=offset,
-            market=market,
         )
         items.extend(page.get("items", []))
         if not page.get("next"):
@@ -481,7 +470,10 @@ def api_analyze():
 
     track_list = []
     for item in tracks:
-        track = item.get("track") if isinstance(item, dict) else None
+        # Spotify a veces devuelve la canción bajo "track" y a veces bajo "item".
+        track = None
+        if isinstance(item, dict):
+            track = item.get("track") or item.get("item")
         if not isinstance(track, dict):
             continue
         uri = track.get("uri")
@@ -607,6 +599,140 @@ def api_apply():
 
     return jsonify(results)
 
+def _event(obj):
+    return json.dumps(obj, ensure_ascii=False) + "\n"
+
+
+def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider, model, deadline, preselected_ids, result):
+    """Generador que pide canciones a la IA y las resuelve en Spotify, emitiendo
+    eventos NDJSON de status/progress. Llena `result` (dict con listas). En caso de
+    error terminal escribe result["fatal"]["error"] y termina; el llamador decide
+    qué hacer. `preselected_ids` son IDs que NO se deben volver a agregar."""
+    track_ids = result["track_ids"]
+    added = result["added"]
+    resolved_tracks = result["resolved_tracks"]
+    not_found = result["not_found"]
+    rejected = result["rejected"]
+    replacement_added = result["replacement_added"]
+    substitutes = result["substitutes"]
+    fatal = result["fatal"]
+    selected_ids = set(preselected_ids)  # incluye lo ya existente, para no duplicar
+
+    def resolve_items(items, mark_replacement=False):
+        """Busca las sugerencias en Spotify EN PARALELO y emite progreso en orden."""
+        items = [it for it in items if it]
+        if not items or len(track_ids) >= count or fatal:
+            return
+        exclude_snapshot = set(selected_ids)
+
+        def resolve_one(it):
+            # 1) intento exacto (título + artista). 2) si la IA inventó el título,
+            # respaldo con una canción real del mismo artista.
+            track = find_spotify_track(sp, it.get("name"), it.get("artist"), exclude_snapshot, mood)
+            if track:
+                return (track, False)
+            if it.get("artist"):
+                fb = find_artist_fallback(sp, it.get("artist"), exclude_snapshot, mood)
+                if fb:
+                    return (fb, True)
+            return (None, False)
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futures = [pool.submit(resolve_one, it) for it in items]
+            for it, fut in zip(items, futures):
+                if len(track_ids) >= count or time.monotonic() > deadline:
+                    for f in futures:
+                        f.cancel()
+                    break
+                try:
+                    track, is_fallback = fut.result()
+                except SpotifyException as e:
+                    if getattr(e, "http_status", None) == 429:
+                        fatal["error"] = ("Spotify limitó las peticiones (429) por demasiadas "
+                                          "búsquedas seguidas. Espera unos minutos e intenta de nuevo.")
+                        for f in futures:
+                            f.cancel()
+                        break
+                    track, is_fallback = None, False
+                except Exception:
+                    track, is_fallback = None, False
+                if track and track["id"] not in selected_ids:
+                    selected_ids.add(track["id"])
+                    track_ids.append(track["id"])
+                    label = candidate_label(track)
+                    added.append(label)
+                    resolved_tracks.append({"id": track["id"], "label": label})
+                    if mark_replacement:
+                        replacement_added.append(label)
+                    if is_fallback:
+                        substitutes.append(label)
+                    yield _event({"type": "progress", "done": len(track_ids), "total": count, "label": label})
+                elif not track:
+                    not_found.append(f"{it.get('artist', 'Artista desconocido')} – {it.get('name', 'Canción desconocida')}")
+
+    yield _event({"type": "status", "message": "La IA está eligiendo las canciones…"})
+    ai_raw = call_ai(_create_prompt(name, mood, count, candidate_count), provider=provider, model=model)
+    try:
+        ai = json.loads(ai_raw.strip().replace("```json", "").replace("```", "").strip())
+    except Exception:
+        fatal["error"] = f"La IA no devolvió una lista válida. Respuesta: {ai_raw[:200]}"
+        return
+
+    result["description"] = ai.get("description", mood)
+    yield _event({"type": "status", "message": "Verificando canciones en Spotify…"})
+    yield from resolve_items(ai.get("tracks", []))
+    if fatal:
+        return
+
+    # Reintento: pedir reemplazos si faltan canciones.
+    if len(track_ids) < count and time.monotonic() < deadline:
+        needed = count - len(track_ids)
+        yield _event({"type": "status", "message": f"Buscando {needed} canción(es) más con la IA…"})
+        retry_raw = call_ai(_retry_prompt(name, mood, needed, added, not_found), provider=provider, model=model)
+        try:
+            retry_ai = json.loads(retry_raw.strip().replace("```json", "").replace("```", "").strip())
+        except Exception:
+            retry_ai = {"tracks": []}
+        yield from resolve_items(retry_ai.get("tracks", []), mark_replacement=True)
+        if fatal:
+            return
+
+    # Rondas de reparación adicionales.
+    repair_round = 0
+    max_repair_rounds = 1 if count > 30 else 2
+    while len(track_ids) < count and repair_round < max_repair_rounds and time.monotonic() < deadline:
+        repair_round += 1
+        needed = count - len(track_ids)
+        yield _event({"type": "status", "message": f"Completando la lista ({len(track_ids)}/{count})…"})
+        repair_raw = call_ai(_repair_prompt(name, mood, needed, added, rejected, not_found), provider=provider, model=model)
+        try:
+            repair_ai = json.loads(repair_raw.strip().replace("```json", "").replace("```", "").strip())
+        except Exception:
+            repair_ai = {"tracks": []}
+        before_count = len(track_ids)
+        yield from resolve_items(repair_ai.get("tracks", []), mark_replacement=True)
+        if fatal:
+            return
+        if len(track_ids) == before_count:
+            break
+
+
+def _new_result(mood):
+    return {
+        "track_ids": [], "added": [], "resolved_tracks": [], "not_found": [],
+        "rejected": [], "replacement_added": [], "substitutes": [],
+        "fatal": {}, "description": mood,
+    }
+
+
+def _ndjson_response(generator):
+    return Response(
+        stream_with_context(generator),
+        mimetype="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.route("/api/create", methods=["POST"])
 def api_create():
     if not refresh_token_if_needed():
@@ -616,187 +742,144 @@ def api_create():
     mood = data.get("mood", "")
     name = data.get("name", "Mi Playlist IA")
     count = max(5, min(int(data.get("count", 15)), 50))
-    # Con el match estricto + 1 búsqueda por canción, pedimos poco extra para
-    # no saturar el límite de peticiones de Spotify.
     candidate_count = min(count + 6, 55)
     deadline = time.monotonic() + 220
-
     provider = data.get("provider", "anthropic")
     model    = data.get("model", None)
     ai_error = ai_config_error(provider)
     if ai_error:
         return jsonify({"error": ai_error}), 400
 
-    def event(obj):
-        return json.dumps(obj, ensure_ascii=False) + "\n"
-
     def generate():
-        # Estado compartido que las sub-rutinas van llenando.
-        track_ids = []
-        added = []
-        resolved_tracks = []
-        not_found = []
-        rejected = []
-        replacement_added = []
-        substitutes = []  # canciones reales del mismo artista (la IA inventó el título)
-        selected_ids = set()
-        fatal = {}  # se llena si Spotify nos corta por rate-limit (429)
-
-        def resolve_items(items, mark_replacement=False):
-            """Busca las sugerencias en Spotify EN PARALELO (varias a la vez) y
-            emite progreso en orden por cada acierto, sin repetir ni pasarse de
-            la cantidad pedida."""
-            items = [it for it in items if it]
-            if not items or len(track_ids) >= count or fatal:
-                return
-            # IDs ya elegidos en fases previas: se excluyen en cada búsqueda.
-            exclude_snapshot = set(selected_ids)
-
-            def resolve_one(it):
-                # 1) intento exacto (título + artista). 2) si la IA inventó el
-                # título, respaldo con una canción real del mismo artista.
-                track = find_spotify_track(sp, it.get("name"), it.get("artist"), exclude_snapshot, mood)
-                if track:
-                    return (track, False)
-                if it.get("artist"):
-                    fb = find_artist_fallback(sp, it.get("artist"), exclude_snapshot, mood)
-                    if fb:
-                        return (fb, True)
-                return (None, False)
-
-            with ThreadPoolExecutor(max_workers=5) as pool:
-                futures = [pool.submit(resolve_one, it) for it in items]
-                # Recorremos en el mismo orden en que se enviaron para que el
-                # contador suba ordenado; las búsquedas ya corren en paralelo.
-                for it, fut in zip(items, futures):
-                    if len(track_ids) >= count or time.monotonic() > deadline:
-                        for f in futures:
-                            f.cancel()
-                        break
-                    try:
-                        track, is_fallback = fut.result()
-                    except SpotifyException as e:
-                        if getattr(e, "http_status", None) == 429:
-                            fatal["error"] = ("Spotify limitó las peticiones (429) por demasiadas "
-                                              "búsquedas seguidas. Espera unos minutos e intenta de nuevo.")
-                            for f in futures:
-                                f.cancel()
-                            break
-                        track, is_fallback = None, False
-                    except Exception:
-                        track, is_fallback = None, False
-                    if track and track["id"] not in selected_ids:
-                        selected_ids.add(track["id"])
-                        track_ids.append(track["id"])
-                        label = candidate_label(track)
-                        added.append(label)
-                        resolved_tracks.append({"id": track["id"], "label": label})
-                        if mark_replacement:
-                            replacement_added.append(label)
-                        if is_fallback:
-                            substitutes.append(label)
-                        yield event({"type": "progress", "done": len(track_ids), "total": count, "label": label})
-                    elif not track:
-                        not_found.append(f"{it.get('artist', 'Artista desconocido')} – {it.get('name', 'Canción desconocida')}")
-
+        result = _new_result(mood)
         try:
-            yield event({"type": "status", "message": "La IA está eligiendo las canciones…"})
-            ai_raw = call_ai(_create_prompt(name, mood, count, candidate_count), provider=provider, model=model)
+            yield from stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider, model, deadline, set(), result)
+            if result["fatal"]:
+                yield _event({"type": "error", "error": result["fatal"]["error"]})
+                return
+            if not result["track_ids"]:
+                yield _event({"type": "error", "error": "No se encontró ninguna canción real en Spotify para crear la playlist. Prueba un mood más concreto o menos restrictivo."})
+                return
+
+            yield _event({"type": "status", "message": "Creando la playlist en tu Spotify…"})
             try:
-                ai = json.loads(ai_raw.strip().replace("```json", "").replace("```", "").strip())
-            except Exception:
-                yield event({"type": "error", "error": f"La IA no devolvió una lista válida. Respuesta: {ai_raw[:200]}"})
-                return
-
-            description = ai.get("description", mood)
-            yield event({"type": "status", "message": "Verificando canciones en Spotify…"})
-            yield from resolve_items(ai.get("tracks", []))
-            if fatal:
-                yield event({"type": "error", "error": fatal["error"]})
-                return
-
-            # Reintento: pedir reemplazos si faltan canciones.
-            if len(track_ids) < count and time.monotonic() < deadline:
-                needed = count - len(track_ids)
-                yield event({"type": "status", "message": f"Buscando {needed} canción(es) más con la IA…"})
-                retry_raw = call_ai(_retry_prompt(name, mood, needed, added, not_found), provider=provider, model=model)
-                try:
-                    retry_ai = json.loads(retry_raw.strip().replace("```json", "").replace("```", "").strip())
-                except Exception:
-                    retry_ai = {"tracks": []}
-                yield from resolve_items(retry_ai.get("tracks", []), mark_replacement=True)
-                if fatal:
-                    yield event({"type": "error", "error": fatal["error"]})
-                    return
-
-            # Rondas de reparación adicionales.
-            repair_round = 0
-            max_repair_rounds = 1 if count > 30 else 2
-            while len(track_ids) < count and repair_round < max_repair_rounds and time.monotonic() < deadline:
-                repair_round += 1
-                needed = count - len(track_ids)
-                yield event({"type": "status", "message": f"Completando la lista ({len(track_ids)}/{count})…"})
-                repair_raw = call_ai(_repair_prompt(name, mood, needed, added, rejected, not_found), provider=provider, model=model)
-                try:
-                    repair_ai = json.loads(repair_raw.strip().replace("```json", "").replace("```", "").strip())
-                except Exception:
-                    repair_ai = {"tracks": []}
-                before_count = len(track_ids)
-                yield from resolve_items(repair_ai.get("tracks", []), mark_replacement=True)
-                if fatal:
-                    yield event({"type": "error", "error": fatal["error"]})
-                    return
-                if len(track_ids) == before_count:
-                    break
-
-            if not track_ids:
-                yield event({"type": "error", "error": "No se encontró ninguna canción real en Spotify para crear la playlist. Prueba un mood más concreto o menos restrictivo."})
-                return
-
-            # Crear la playlist solo cuando ya hay canciones listas.
-            yield event({"type": "status", "message": "Creando la playlist en tu Spotify…"})
-            try:
-                pl = sp.current_user_playlist_create(name=name, public=False, description=description)
+                pl = sp.current_user_playlist_create(name=name, public=False, description=result["description"])
             except SpotifyException as e:
                 if getattr(e, "http_status", None) == 403:
-                    yield event({"type": "error", "error": "Spotify rechazó crear la playlist (403). Cierra sesión con 'Salir', vuelve a conectar Spotify y acepta los permisos de modificación de playlists."})
+                    yield _event({"type": "error", "error": "Spotify rechazó crear la playlist (403). Cierra sesión con 'Salir', vuelve a conectar Spotify y acepta los permisos de modificación de playlists."})
                     return
-                yield event({"type": "error", "error": f"No se pudo crear la playlist en Spotify: {str(e)}"})
+                yield _event({"type": "error", "error": f"No se pudo crear la playlist en Spotify: {str(e)}"})
                 return
 
             playlist_id = pl["id"]
             playlist_url = pl["external_urls"]["spotify"]
             try:
-                sp.playlist_add_items(playlist_id, track_ids)
+                sp.playlist_add_items(playlist_id, result["track_ids"])
             except SpotifyException as e:
                 if getattr(e, "http_status", None) == 403:
-                    yield event({"type": "error", "error": "La playlist se creó, pero Spotify rechazó agregar canciones (403). Reconecta Spotify y acepta permisos."})
+                    yield _event({"type": "error", "error": "La playlist se creó, pero Spotify rechazó agregar canciones (403). Reconecta Spotify y acepta permisos."})
                     return
-                yield event({"type": "error", "error": f"No se pudieron agregar canciones en Spotify: {str(e)}"})
+                yield _event({"type": "error", "error": f"No se pudieron agregar canciones en Spotify: {str(e)}"})
                 return
 
-            yield event({
+            yield _event({
                 "type": "done",
                 "playlist_id": playlist_id,
                 "playlist_url": playlist_url,
                 "playlist_name": name,
-                "added": added,
-                "replacement_added": replacement_added,
-                "substitutes": substitutes,
-                "not_found": not_found,
-                "rejected": rejected,
+                "added": result["added"],
+                "replacement_added": result["replacement_added"],
+                "substitutes": result["substitutes"],
+                "not_found": result["not_found"],
+                "rejected": result["rejected"],
                 "target_count": count,
-                "timed_out": len(track_ids) < count and time.monotonic() >= deadline,
+                "timed_out": len(result["track_ids"]) < count and time.monotonic() >= deadline,
             })
         except Exception as e:
             app.logger.exception("Error en /api/create stream")
-            yield event({"type": "error", "error": f"Error interno: {str(e)}"})
+            yield _event({"type": "error", "error": f"Error interno: {str(e)}"})
 
-    return Response(
-        stream_with_context(generate()),
-        mimetype="application/x-ndjson",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    return _ndjson_response(generate())
+
+
+@app.route("/api/add_to_playlist", methods=["POST"])
+def api_add_to_playlist():
+    """Agrega canciones nuevas (según un prompt) a una playlist ya existente."""
+    if not refresh_token_if_needed():
+        return jsonify({"error": "not_logged_in"}), 401
+    sp = get_sp()
+    data = request.json
+    mood = data.get("mood", "")
+    playlist_id = extract_playlist_id(data.get("url", ""))
+    count = max(1, min(int(data.get("count", 10)), 50))
+    candidate_count = min(count + 6, 55)
+    deadline = time.monotonic() + 220
+    provider = data.get("provider", "anthropic")
+    model    = data.get("model", None)
+    ai_error = ai_config_error(provider)
+    if ai_error:
+        return jsonify({"error": ai_error}), 400
+
+    def generate():
+        result = _new_result(mood)
+        try:
+            # Cargar la playlist existente y sus canciones (para no duplicar).
+            try:
+                pl_info, existing_items = get_playlist_for_analysis(sp, playlist_id)
+            except SpotifyException as e:
+                status = getattr(e, "http_status", None)
+                if status == 404:
+                    yield _event({"type": "error", "error": "No se encontró esa playlist (404). Si es una playlist creada por Spotify, no se puede editar por API. Usa una playlist tuya."})
+                    return
+                yield _event({"type": "error", "error": f"No se pudo cargar la playlist: {str(e)}"})
+                return
+            except Exception as e:
+                yield _event({"type": "error", "error": f"No se pudo cargar la playlist: {str(e)}"})
+                return
+
+            playlist_name = pl_info.get("name", "tu playlist")
+            existing_ids = set()
+            for it in existing_items:
+                tr = (it.get("track") or it.get("item")) if isinstance(it, dict) else None
+                if isinstance(tr, dict) and tr.get("id"):
+                    existing_ids.add(tr["id"])
+
+            yield from stream_resolve_from_prompt(sp, playlist_name, mood, count, candidate_count, provider, model, deadline, existing_ids, result)
+            if result["fatal"]:
+                yield _event({"type": "error", "error": result["fatal"]["error"]})
+                return
+            if not result["track_ids"]:
+                yield _event({"type": "error", "error": "No se encontró ninguna canción nueva para agregar. Prueba un prompt distinto."})
+                return
+
+            yield _event({"type": "status", "message": f"Agregando canciones a “{playlist_name}”…"})
+            try:
+                sp.playlist_add_items(playlist_id, result["track_ids"])
+            except SpotifyException as e:
+                if getattr(e, "http_status", None) == 403:
+                    yield _event({"type": "error", "error": "Spotify rechazó agregar canciones (403). Solo puedes editar playlists tuyas. Reconecta y acepta permisos."})
+                    return
+                yield _event({"type": "error", "error": f"No se pudieron agregar canciones: {str(e)}"})
+                return
+
+            yield _event({
+                "type": "done",
+                "playlist_id": playlist_id,
+                "playlist_url": f"https://open.spotify.com/playlist/{playlist_id}",
+                "playlist_name": playlist_name,
+                "added": result["added"],
+                "replacement_added": result["replacement_added"],
+                "substitutes": result["substitutes"],
+                "not_found": result["not_found"],
+                "rejected": result["rejected"],
+                "target_count": count,
+                "timed_out": len(result["track_ids"]) < count and time.monotonic() >= deadline,
+            })
+        except Exception as e:
+            app.logger.exception("Error en /api/add_to_playlist stream")
+            yield _event({"type": "error", "error": f"Error interno: {str(e)}"})
+
+    return _ndjson_response(generate())
 
 
 def _create_prompt(name, mood, count, candidate_count):
