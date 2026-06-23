@@ -12,7 +12,8 @@ PASOS PARA USAR PLAYLISTAI
    Spotify. Una app nueva esta en "Development Mode" y solo deja entrar a las
    cuentas que agregues ahi; si no, el login dara error.
 
-4. Revisa que el archivo .env tenga tus keys:
+4. Revisa que el archivo .env tenga tus keys. Si no existe, start.cmd o
+   start.command lo crea automaticamente desde .env.example:
 
    SPOTIFY_CLIENT_ID=tu_client_id
    SPOTIFY_CLIENT_SECRET=tu_client_secret
@@ -26,9 +27,10 @@ PASOS PARA USAR PLAYLISTAI
 
 5. Haz doble clic en:
 
-   PlaylistAI.lnk
+   Windows: start.cmd
+   macOS:   start.command
 
-   Se abrira una ventana de PowerShell. Dejala abierta mientras uses la app.
+   Se abrira una ventana de terminal. Dejala abierta mientras uses la app.
 
 6. Abre la app en el navegador:
 
@@ -53,7 +55,9 @@ PASOS PARA USAR PLAYLISTAI
 NOTAS
 
 - No abras templates/index.html para usar la app. Ese archivo es una plantilla interna.
-- No cierres la ventana de PowerShell mientras estes usando PlaylistAI.
+- PlaylistAI.lnk puede funcionar en tu PC, pero no es portable para Git porque guarda
+  una ruta absoluta. Para cualquier maquina usa start.cmd o start.command.
+- No cierres la ventana de terminal mientras estes usando PlaylistAI.
 - Si Spotify muestra error de redirect URI, revisa que en Spotify y en .env diga
   exactamente: http://127.0.0.1:5000/callback
 - Si ves "Spotify limito las peticiones (429)", hiciste muchas peticiones seguidas
