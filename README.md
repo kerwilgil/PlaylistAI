@@ -107,3 +107,13 @@ GPT-5.4 / DeepSeek V4 Pro). En *IA Config* puedes cambiar a uno más rápido
 
 El archivo `.env` (claves de Spotify y de IA) está en `.gitignore` y **no se sube**
 al repositorio. Cada quien usa sus propias credenciales.
+
+Para gotchas conocidos del código (ej. el manejo del cache de OAuth de spotipy),
+historial de auditorías de seguridad y decisiones de diseño, ver [`CONTEXT.md`](CONTEXT.md).
+
+## Responsive
+
+Pensada para uso en desktop, pero ajustada también para tablets y laptops de 13"
+(sidebar más angosto y targets táctiles más grandes por debajo de 1180px de ancho).
+El sidebar de navegación no está optimizado para celulares (uso local, no es el
+caso de uso principal).

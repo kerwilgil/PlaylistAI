@@ -242,6 +242,17 @@
   @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
   /* ── RESPONSIVE ── */
+  /* Tablets y laptops de 13" (~1180px y menos): sidebar mas angosto,
+     menos padding desperdiciado, targets tactiles mas grandes. */
+  @media (max-width: 1180px) {
+    .shell { grid-template-columns: 208px 1fr; }
+    .sidebar { padding: 24px 14px; }
+    .page { padding: 32px 28px; max-width: none; }
+    .nav-item { padding: 12px; }
+    .track-checkbox { width: 20px; height: 20px; }
+    .btn { padding: 12px 20px; }
+  }
+
   @media (max-width: 768px) {
     .shell { grid-template-columns: 1fr; }
     .sidebar { display: none; }
