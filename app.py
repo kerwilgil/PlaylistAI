@@ -2,21 +2,35 @@
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlencode, urlparse
 from flask import Flask, redirect, request, session, jsonify, render_template, Response, stream_with_context
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException, InternalServerError
 from spotipy.oauth2 import SpotifyOAuth
 from spotipy.exceptions import SpotifyException
+from spotipy.cache_handler import MemoryCacheHandler
 import spotipy
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
+@app.errorhandler(HTTPException)
+def handle_http_exception(error):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": error.description or error.name}), error.code
+    return error
+
 @app.errorhandler(Exception)
-def handle_api_exception(error):
-    if not request.path.startswith("/api/"):
-        raise error
-    status = error.code if isinstance(error, HTTPException) else 500
-    app.logger.exception("API error on %s", request.path)
-    return jsonify({"error": f"Error interno en {request.path}: {str(error)}"}), status
+def handle_unexpected_exception(error):
+    app.logger.exception("Unhandled error on %s", request.path)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Error interno del servidor. Revisa los logs."}), 500
+    return InternalServerError()
+
+@app.after_request
+def set_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+    response.headers["Referrer-Policy"] = "same-origin"
+    return response
 
 # ── CONFIG ─────────────────────────────────────────────────────
 def load_dotenv(path=".env"):
@@ -132,7 +146,13 @@ def spotify_oauth(state=None):
         scope=SCOPES,
         state=state,
         show_dialog=True,
-        cache_handler=None,
+        # cache_handler=None NO desactiva el cache de spotipy: la libreria lo
+        # trata como "no especificado" y usa su CacheFileHandler por defecto,
+        # que escribe el token en texto plano a .cache en cada login. Este
+        # objeto SpotifyOAuth se crea nuevo en cada request y el token real
+        # vive en session["token_info"] (ver callback()/get_sp()), asi que
+        # un cache en memoria descartable es el equivalente correcto a "sin cache".
+        cache_handler=MemoryCacheHandler(),
     )
 
 def refresh_token_if_needed():
