@@ -113,7 +113,14 @@ historial de auditorías de seguridad y decisiones de diseño, ver [`CONTEXT.md`
 
 ## Responsive
 
-Pensada para uso en desktop, pero ajustada también para tablets y laptops de 13"
-(sidebar más angosto y targets táctiles más grandes por debajo de 1180px de ancho).
-El sidebar de navegación no está optimizado para celulares (uso local, no es el
-caso de uso principal).
+Pensada para uso en desktop, pero funciona en cualquier tamaño:
+
+- **Tablets y laptops de 13"** (≤1180px): sidebar más angosto y targets táctiles
+  más grandes.
+- **Celular** (≤768px): el sidebar se reemplaza por una barra superior (logo +
+  cuenta) y una barra de navegación inferior fija con los 4 accesos principales.
+
+## Accesibilidad
+
+Labels de formulario enlazados a su input (`for=`/`id`), y el texto secundario
+(`--text-muted`) cumple contraste WCAG AA (~4.6:1) sobre el fondo oscuro.

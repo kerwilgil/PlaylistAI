@@ -171,8 +171,17 @@ def extract_playlist_id(url_or_id):
     match = re.search(r'playlist/([A-Za-z0-9]+)', url_or_id)
     return match.group(1) if match else url_or_id.strip()
 
+def smallest_image_url(images):
+    """images viene ordenado de mas grande a mas chico segun la API de Spotify."""
+    images = images or []
+    return images[-1]["url"] if images else None
+
+def largest_image_url(images):
+    images = images or []
+    return images[0]["url"] if images else None
+
 def get_playlist_for_analysis(sp, playlist_id):
-    pl = sp.playlist(playlist_id, fields="id,name,description,tracks.total,owner.id,owner.display_name")
+    pl = sp.playlist(playlist_id, fields="id,name,description,images,tracks.total,owner.id,owner.display_name")
     items = []
     offset = 0
     limit = 100
@@ -509,6 +518,7 @@ def api_analyze():
             "name": name,
             "artist": artist,
             "uri": uri,
+            "image": smallest_image_url((track.get("album") or {}).get("images")),
         })
     if not track_list:
         total = pl.get("tracks", {}).get("total", 0)
@@ -564,12 +574,14 @@ Responde SOLO en este formato JSON (sin markdown, sin texto extra):
             if r_item["name"].lower() in t["name"].lower() and r_item["artist"].lower() in t["artist"].lower():
                 r_item["id"] = t["id"]
                 r_item["uri"] = t["uri"]
+                r_item["image"] = t.get("image")
                 break
 
     return jsonify({
         "playlist_id": playlist_id,
         "playlist_name": pl["name"],
         "playlist_description": pl.get("description", ""),
+        "playlist_image": largest_image_url(pl.get("images")),
         "tracks": track_list,
         "ai": ai
     })
