@@ -22,7 +22,7 @@
     --border-strong:  rgba(255,255,255,0.14);
     --text-primary:   #f1f1f1;
     --text-secondary: #a0a0a0;
-    --text-muted:     #5a5a5a;
+    --text-muted:     #7a7a7a;
     --green:          #1DB954;
     --green-hover:    #1ed760;
     --green-subtle:   rgba(29,185,84,0.12);
@@ -165,6 +165,10 @@
 
   .track-checkbox { width: 16px; height: 16px; accent-color: var(--green); cursor: pointer; flex-shrink: 0; }
 
+  .track-thumb { width: 36px; height: 36px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--bg-raised); }
+  .track-thumb-empty { display: flex; align-items: center; justify-content: center; }
+  .track-thumb-empty svg { width: 16px; height: 16px; fill: var(--text-muted); }
+
   /* ── AI SUMMARY ── */
   .ai-summary {
     background: var(--green-subtle); border: 1px solid rgba(29,185,84,0.2);
@@ -211,8 +215,9 @@
 
   /* ── PLAYLIST HEADER CARD ── */
   .pl-header { display: flex; gap: 20px; align-items: center; margin-bottom: 24px; }
-  .pl-cover { width: 80px; height: 80px; border-radius: var(--radius-md); background: var(--green-subtle); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .pl-cover { width: 80px; height: 80px; border-radius: var(--radius-md); background: var(--green-subtle); display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
   .pl-cover svg { width: 36px; height: 36px; fill: var(--green); }
+  .pl-cover img { width: 100%; height: 100%; object-fit: cover; }
   .pl-name { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
   .pl-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
   .pl-meta { font-size: 12px; color: var(--text-muted); }
@@ -253,10 +258,36 @@
     .btn { padding: 12px 20px; }
   }
 
+  /* ── MOBILE NAV (topbar + tabbar), solo visibles bajo 768px ── */
+  .mobile-topbar { display: none; }
+  .mobile-tabbar { display: none; }
+
   @media (max-width: 768px) {
     .shell { grid-template-columns: 1fr; }
     .sidebar { display: none; }
-    .page { padding: 24px 20px; }
+    .page { padding: 20px 20px calc(84px + env(safe-area-inset-bottom)); }
+
+    .mobile-topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; background: var(--bg-surface); border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 20;
+    }
+    .mobile-topbar .logo { padding: 0; }
+    .mobile-topbar .user-chip { padding: 6px 10px; }
+
+    .mobile-tabbar {
+      display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+      background: var(--bg-surface); border-top: 1px solid var(--border);
+      padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    }
+    .tabbar-item {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 8px 4px; min-height: 48px; border: none; background: none;
+      color: var(--text-secondary); font-size: 11px; font-family: var(--font);
+      font-weight: 500; cursor: pointer; border-radius: var(--radius-sm);
+    }
+    .tabbar-item svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .tabbar-item.active { color: var(--green); }
   }
 </style>
 </head>
@@ -281,6 +312,17 @@
 
 {% else %}
 <!-- ── DASHBOARD ── -->
+<header class="mobile-topbar">
+  <div class="logo">
+    <svg viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+    <span class="logo-text">Playlist<span>AI</span></span>
+  </div>
+  <div class="user-chip">
+    <img class="user-avatar" id="user-avatar-mobile" src="" onerror="this.style.display='none'">
+    <span class="user-name" id="user-name-mobile">...</span>
+    <a href="/logout" class="logout-btn">Salir</a>
+  </div>
+</header>
 <div class="shell">
   <aside class="sidebar">
     <div class="logo">
@@ -288,19 +330,19 @@
       <span class="logo-text">Playlist<span>AI</span></span>
     </div>
 
-    <button class="nav-item active" onclick="showPage('analyze')">
+    <button class="nav-item active" data-page="analyze" onclick="showPage('analyze')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       Analizar Playlist
     </button>
-    <button class="nav-item" onclick="showPage('create')">
+    <button class="nav-item" data-page="create" onclick="showPage('create')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
       Crear con IA
     </button>
-    <button class="nav-item" onclick="showPage('add')">
+    <button class="nav-item" data-page="add" onclick="showPage('add')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><path d="M14 8h7M17.5 4.5v7"/></svg>
       Agregar a playlist
     </button>
-    <button class="nav-item" onclick="showPage('settings')">
+    <button class="nav-item" data-page="settings" onclick="showPage('settings')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
       IA Config
     </button>
@@ -325,7 +367,7 @@
 
       <div class="card" id="analyze-form-card">
         <div class="input-group">
-          <label class="input-label">Link de la playlist</label>
+          <label class="input-label" for="playlist-url">Link de la playlist</label>
           <input class="input" id="playlist-url" type="text" placeholder="https://open.spotify.com/playlist/...">
         </div>
         <button class="btn btn-green" id="analyze-btn" onclick="analyzePlaylist()">
@@ -342,8 +384,9 @@
       <div id="analyze-results" style="display:none">
         <!-- Playlist header -->
         <div class="pl-header">
-          <div class="pl-cover">
-            <svg viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+          <div class="pl-cover" id="res-pl-cover">
+            <img id="res-pl-cover-img" style="display:none" alt="">
+            <svg id="res-pl-cover-icon" viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
           </div>
           <div>
             <div class="pl-name" id="res-pl-name"></div>
@@ -405,15 +448,15 @@
 
       <div class="card" id="create-form-card">
         <div class="input-group">
-          <label class="input-label">Nombre de la playlist</label>
+          <label class="input-label" for="create-name">Nombre de la playlist</label>
           <input class="input" id="create-name" type="text" placeholder="Ej: Late Night Coding · Dark Mode">
         </div>
         <div class="input-group">
-          <label class="input-label">Describe el mood / concepto</label>
+          <label class="input-label" for="create-mood">Describe el mood / concepto</label>
           <textarea class="input" id="create-mood" placeholder="Ej: Música instrumental oscura y profunda para programar de noche. Deep techno, ambient, post-rock sin voces. Lenta, concentrada, inmersiva."></textarea>
         </div>
         <div class="input-group">
-          <label class="input-label">Cantidad de canciones</label>
+          <label class="input-label" for="create-count">Cantidad de canciones</label>
           <input class="input" id="create-count" type="number" value="15" min="5" max="50" style="max-width:120px">
         </div>
         <button class="btn btn-green" id="create-btn" onclick="createPlaylist()">
@@ -450,15 +493,15 @@
 
       <div class="card" id="add-form-card">
         <div class="input-group">
-          <label class="input-label">Link de tu playlist</label>
+          <label class="input-label" for="add-url">Link de tu playlist</label>
           <input class="input" id="add-url" type="text" placeholder="https://open.spotify.com/playlist/...">
         </div>
         <div class="input-group">
-          <label class="input-label">¿Qué canciones quieres agregar?</label>
+          <label class="input-label" for="add-mood">¿Qué canciones quieres agregar?</label>
           <textarea class="input" id="add-mood" placeholder="Ej: súmale 10 temas más de deep house melódico, suaves y nocturnos, estilo Lane 8 y Yotto."></textarea>
         </div>
         <div class="input-group">
-          <label class="input-label">Cuántas agregar</label>
+          <label class="input-label" for="add-count">Cuántas agregar</label>
           <input class="input" id="add-count" type="number" value="10" min="1" max="50" style="max-width:120px">
         </div>
         <button class="btn btn-green" id="add-btn" onclick="addToPlaylist()">
@@ -501,7 +544,7 @@
       <div style="margin-top:16px" id="model-select-wrap" style="display:none">
         <div class="card">
           <div class="input-group" style="margin-bottom:0">
-            <label class="input-label">Modelo</label>
+            <label class="input-label" for="model-select">Modelo</label>
             <select class="input" id="model-select"></select>
           </div>
         </div>
@@ -518,6 +561,25 @@
   </main>
 </div>
 
+<nav class="mobile-tabbar">
+  <button class="tabbar-item active" data-page="analyze" onclick="showPage('analyze')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    Analizar
+  </button>
+  <button class="tabbar-item" data-page="create" onclick="showPage('create')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+    Crear
+  </button>
+  <button class="tabbar-item" data-page="add" onclick="showPage('add')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><path d="M14 8h7M17.5 4.5v7"/></svg>
+    Agregar
+  </button>
+  <button class="tabbar-item" data-page="settings" onclick="showPage('settings')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+    Config
+  </button>
+</nav>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -528,8 +590,13 @@ async function init() {
   try {
     const r = await fetch('/api/me');
     const u = await r.json();
-    document.getElementById('user-name').textContent = u.name || 'Usuario';
-    if (u.image) document.getElementById('user-avatar').src = u.image;
+    const name = u.name || 'Usuario';
+    document.getElementById('user-name').textContent = name;
+    document.getElementById('user-name-mobile').textContent = name;
+    if (u.image) {
+      document.getElementById('user-avatar').src = u.image;
+      document.getElementById('user-avatar-mobile').src = u.image;
+    }
   } catch(e) {}
 }
 init();
@@ -537,9 +604,8 @@ init();
 // ── NAV ──
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('[data-page]').forEach(n => n.classList.toggle('active', n.dataset.page === name));
   document.getElementById('page-' + name).classList.add('active');
-  event.currentTarget.classList.add('active');
 }
 
 // ── TOAST ──
@@ -615,13 +681,29 @@ async function analyzePlaylist() {
   }
 }
 
+function trackThumbHtml(imageUrl) {
+  if (imageUrl) return `<img class="track-thumb" src="${escapeHtml(imageUrl)}" alt="">`;
+  return `<div class="track-thumb track-thumb-empty"><svg viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg></div>`;
+}
+
 function renderAnalyzeResults(data) {
   document.getElementById('res-pl-name').textContent = data.playlist_name;
   document.getElementById('res-pl-desc').textContent = data.playlist_description || '';
   document.getElementById('res-pl-meta').textContent = `${data.tracks.length} canciones`;
   document.getElementById('res-summary-text').textContent = data.ai.summary || '';
 
-  // Remove list
+  const coverImg = document.getElementById('res-pl-cover-img');
+  const coverIcon = document.getElementById('res-pl-cover-icon');
+  if (data.playlist_image) {
+    coverImg.src = data.playlist_image;
+    coverImg.style.display = 'block';
+    coverIcon.style.display = 'none';
+  } else {
+    coverImg.style.display = 'none';
+    coverIcon.style.display = 'block';
+  }
+
+  // Remove list (canciones reales de la playlist: siempre tienen portada real si Spotify la dio)
   const removeList = document.getElementById('res-remove-list');
   const removeItems = data.ai.remove || [];
   document.getElementById('res-remove-count').textContent = `${removeItems.length} sugerida${removeItems.length !== 1 ? 's' : ''}`;
@@ -630,6 +712,7 @@ function renderAnalyzeResults(data) {
     : removeItems.map((t, i) => `
       <div class="track-item">
         <input type="checkbox" class="track-checkbox" id="rm-${i}" checked data-index="${i}">
+        ${trackThumbHtml(t.image)}
         <div class="track-info">
           <div class="track-name">${escapeHtml(t.name)}</div>
           <div class="track-artist">${escapeHtml(t.artist)} · <span style="color:var(--text-muted)">${escapeHtml(t.reason)}</span></div>
@@ -637,13 +720,14 @@ function renderAnalyzeResults(data) {
         <span class="track-badge badge-remove">Quitar</span>
       </div>`).join('');
 
-  // Add list
+  // Add list (propuestas de la IA, aun sin verificar contra Spotify -> sin portada todavia)
   const addList = document.getElementById('res-add-list');
   const addItems = data.ai.add || [];
   document.getElementById('res-add-count').textContent = `${addItems.length} sugerida${addItems.length !== 1 ? 's' : ''}`;
   addList.innerHTML = addItems.map((t, i) => `
     <div class="track-item">
       <input type="checkbox" class="track-checkbox" id="add-${i}" checked data-index="${i}">
+      ${trackThumbHtml(t.image)}
       <div class="track-info">
         <div class="track-name">${escapeHtml(t.name)}</div>
         <div class="track-artist">${escapeHtml(t.artist)} · <span style="color:var(--text-muted)">${escapeHtml(t.reason)}</span></div>

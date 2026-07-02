@@ -42,9 +42,16 @@ Lo que ya estaba bien (verificado, no solo revisado): CSRF de OAuth con `state` 
 
 ## Diseño / responsive
 
-App pensada para desktop. Revisión visual 2026-07-02 identificó, además del tema de seguridad, oportunidades de UI (no todas priorizadas — uso es local, un solo usuario):
-- **Hecho**: breakpoint `@media (max-width: 1180px)` en `templates/index.html` para tablets landscape y laptops de 13" — sidebar 240px→208px, se quita `max-width:900px` del contenido, checkboxes de tracks 16px→20px (touch), más padding en botones. Verificado con iframes de ancho fijo a 1280/1024/768px (el `resize_window` de la extensión de Chrome no afectaba el viewport real en esta máquina — si hace falta reverificar, usar iframes en vez de resize).
-- **Pendiente, no priorizado** (uso local, no crítico): sidebar se oculta por completo <768px sin navegación alternativa (usuario queda atado a la página que cargó); labels de formularios sin `for=`/`id` (accesibilidad); contraste de `--text-muted` (~3.4:1) bajo WCAG AA en texto secundario; sin portadas/álbum art reales de Spotify en las listas de tracks (mejora de "delight", no funcional).
+App pensada para desktop. Revisión visual 2026-07-02 identificó oportunidades de UI; todas resueltas a la fecha.
+
+- **Breakpoint 1180px** (tablets landscape y laptops de 13"): sidebar 240px→208px, se quita `max-width:900px` del contenido, checkboxes de tracks 16px→20px (touch), más padding en botones.
+- **Nav mobile <768px**: antes el sidebar se ocultaba por completo sin reemplazo (usuario quedaba atado a la página que cargó). Ahora hay `.mobile-topbar` (logo + avatar + "Salir", `position:sticky`) y `.mobile-tabbar` (4 botones, `position:fixed` abajo, mismo `data-page` que el sidebar). `showPage(name)` en el JS ya no depende del `event` global — usa `document.querySelectorAll('[data-page]')` para sincronizar el estado activo entre sidebar y tabbar a la vez. `.page` gana `padding-bottom` extra (`calc(84px + env(safe-area-inset-bottom))`) para no quedar tapada por el tabbar fijo.
+- **Labels sin `for=`**: los 8 `<label class="input-label">` del formulario ahora tienen `for="<id-del-input>"` (playlist-url, create-name, create-mood, create-count, add-url, add-mood, add-count, model-select).
+- **Contraste de `--text-muted`**: `#5a5a5a` (~3.4:1 sobre `--bg-base`, bajo WCAG AA) → `#7a7a7a` (~4.6:1). Cambio de una sola variable CSS, efecto global (track-num, section-count, pl-meta, empty state, logout-btn, placeholders).
+- **Álbum art**: `app.py` ahora manda `playlist_image` (portada de la playlist, campo `images` agregado a `sp.playlist(..., fields=...)`) y `image` por track (`album.images`, tomando el más chico disponible con `smallest_image_url()`). En el frontend, `res-pl-cover` muestra la portada real si existe (si no, cae al ícono SVG de siempre) y cada fila de `track-item` tiene un thumbnail de 36×36 vía `trackThumbHtml()`.
+  - **Limitación intencional**: las canciones en "Canciones a eliminar" (`ai.remove`) sí tienen portada real porque ya están matcheadas contra la playlist. Las sugerencias de "Canciones sugeridas" (`ai.add`) son propuestas de la IA aún no verificadas contra el catálogo de Spotify (eso pasa recién al aplicar, en `/api/apply` → `find_spotify_track`), así que muestran un ícono placeholder neutro en vez de buscar el track especulativamente solo para mostrar arte — evita llamadas extra a la API de Spotify y más latencia por una mejora puramente cosmética.
+
+Verificado visualmente con iframes de ancho fijo (1280/1024/768/390px — el `resize_window` de la extensión de Chrome no afecta el viewport real en esta máquina, usar iframes si hace falta reverificar) y clicks reales dentro del iframe de 390px confirmando que el tabbar cambia de página y sincroniza el estado activo.
 
 ## Cómo levantar en local
 ```
