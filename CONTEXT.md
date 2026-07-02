@@ -40,6 +40,12 @@ Hallazgos y fixes:
 
 Lo que ya estaba bien (verificado, no solo revisado): CSRF de OAuth con `state` correcto, todas las rutas `/api/*` exigen sesión, cero XSS en frontend (`escapeHtml()` consistente + auto-escape de Jinja), CORS no habilitado bloquea CSRF cross-origin de facto, nunca se commiteó un secreto, `debug=False`.
 
+## Diseño / responsive
+
+App pensada para desktop. Revisión visual 2026-07-02 identificó, además del tema de seguridad, oportunidades de UI (no todas priorizadas — uso es local, un solo usuario):
+- **Hecho**: breakpoint `@media (max-width: 1180px)` en `templates/index.html` para tablets landscape y laptops de 13" — sidebar 240px→208px, se quita `max-width:900px` del contenido, checkboxes de tracks 16px→20px (touch), más padding en botones. Verificado con iframes de ancho fijo a 1280/1024/768px (el `resize_window` de la extensión de Chrome no afectaba el viewport real en esta máquina — si hace falta reverificar, usar iframes en vez de resize).
+- **Pendiente, no priorizado** (uso local, no crítico): sidebar se oculta por completo <768px sin navegación alternativa (usuario queda atado a la página que cargó); labels de formularios sin `for=`/`id` (accesibilidad); contraste de `--text-muted` (~3.4:1) bajo WCAG AA en texto secundario; sin portadas/álbum art reales de Spotify en las listas de tracks (mejora de "delight", no funcional).
+
 ## Cómo levantar en local
 ```
 uv run --with-requirements requirements.txt python app.py
