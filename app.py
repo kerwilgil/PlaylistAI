@@ -693,7 +693,11 @@ def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider,
                     track_ids.append(track["id"])
                     label = candidate_label(track)
                     added.append(label)
-                    resolved_tracks.append({"id": track["id"], "label": label})
+                    resolved_tracks.append({
+                        "id": track["id"],
+                        "label": label,
+                        "image": smallest_image_url((track.get("album") or {}).get("images")),
+                    })
                     if mark_replacement:
                         replacement_added.append(label)
                     if is_fallback:
@@ -820,6 +824,7 @@ def api_create():
                 "playlist_url": playlist_url,
                 "playlist_name": name,
                 "added": result["added"],
+                "resolved_tracks": result["resolved_tracks"],
                 "replacement_added": result["replacement_added"],
                 "substitutes": result["substitutes"],
                 "not_found": result["not_found"],
@@ -900,6 +905,7 @@ def api_add_to_playlist():
                 "playlist_url": f"https://open.spotify.com/playlist/{playlist_id}",
                 "playlist_name": playlist_name,
                 "added": result["added"],
+                "resolved_tracks": result["resolved_tracks"],
                 "replacement_added": result["replacement_added"],
                 "substitutes": result["substitutes"],
                 "not_found": result["not_found"],
