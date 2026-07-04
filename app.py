@@ -10,6 +10,7 @@ import spotipy
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 @app.errorhandler(HTTPException)
 def handle_http_exception(error):
@@ -163,7 +164,13 @@ def refresh_token_if_needed():
         return False
     oauth = spotify_oauth()
     if oauth.is_token_expired(token):
-        token = oauth.refresh_access_token(token["refresh_token"])
+        try:
+            token = oauth.refresh_access_token(token["refresh_token"])
+        except Exception:
+            # Refresh token revocado/inválido (ej. se quitó el acceso de la app
+            # en Spotify). Limpiar sesión → el frontend recibe 401 y pide reconectar.
+            session.clear()
+            return False
         session["token_info"] = token
     return True
 
@@ -223,11 +230,14 @@ def token_overlap_score(expected, actual):
 
 SPOTIFY_SEARCH_CACHE = {}
 SPOTIFY_ARTIST_CACHE = {}
+CACHE_MAX_ENTRIES = 500
 
 def spotify_search(sp, query, limit=10):
     limit = max(1, min(int(limit), 20))
     cache_key = (query, limit)
     if cache_key not in SPOTIFY_SEARCH_CACHE:
+        if len(SPOTIFY_SEARCH_CACHE) >= CACHE_MAX_ENTRIES:
+            SPOTIFY_SEARCH_CACHE.clear()
         SPOTIFY_SEARCH_CACHE[cache_key] = sp.search(q=query, type="track", limit=limit)["tracks"]["items"]
     return SPOTIFY_SEARCH_CACHE[cache_key]
 
@@ -251,6 +261,8 @@ def artist_genres(sp, artist_id):
     if not artist_id:
         return []
     if artist_id not in SPOTIFY_ARTIST_CACHE:
+        if len(SPOTIFY_ARTIST_CACHE) >= CACHE_MAX_ENTRIES:
+            SPOTIFY_ARTIST_CACHE.clear()
         SPOTIFY_ARTIST_CACHE[artist_id] = sp.artist(artist_id).get("genres", [])
     return SPOTIFY_ARTIST_CACHE[artist_id]
 
@@ -267,11 +279,17 @@ def track_allowed_by_prompt(sp, track, mood):
     ]
     # Solo filtramos por el texto del track (sin llamar a sp.artist por género,
     # que disparaba muchísimas peticiones extra a Spotify y causaba rate-limit).
-    if any(term in label for term in rejected_terms):
+    # Coincidencia por palabra completa, no substring: "rock" no debe rechazar
+    # "Rocket Man" ni "ron" rechazar "electronic".
+    padded_label = f" {label} "
+    if any(f" {term} " in padded_label for term in rejected_terms):
         return False
     return True
 
-def find_spotify_track(sp, name, artist=None, exclude_ids=None, mood=None):
+def find_spotify_track(sp, name, artist=None, exclude_ids=None, mood=None, filtered_out=None):
+    """`filtered_out`: lista opcional donde se registran candidatos descartados
+    por el filtro del prompt (track_allowed_by_prompt), para distinguir
+    "rechazada por prompt" de "no encontrada" en el resultado final."""
     exclude_ids = exclude_ids or set()
     base_name = re.sub(r"\s*[-–—]\s*(club mix|extended mix|original mix|radio edit|remix|edit)\s*$", "", name or "", flags=re.I).strip()
     # Una sola consulta por canción para no saturar el límite de Spotify.
@@ -296,6 +314,8 @@ def find_spotify_track(sp, name, artist=None, exclude_ids=None, mood=None):
                 continue
             scored_ids.add(track_id)
             if mood and not track_allowed_by_prompt(sp, track, mood):
+                if filtered_out is not None:
+                    filtered_out.append(candidate_label(track))
                 continue
             track_artist = track["artists"][0]["name"] if track.get("artists") else ""
             all_artists = " ".join(a.get("name", "") for a in (track.get("artists") or []))
@@ -565,13 +585,23 @@ Responde SOLO en este formato JSON (sin markdown, sin texto extra):
     try:
         ai_raw_clean = ai_raw.strip().replace("```json","").replace("```","").strip()
         ai = json.loads(ai_raw_clean)
-    except:
+    except Exception:
+        ai = {"summary": ai_raw, "remove": [], "add": []}
+    if not isinstance(ai, dict):
         ai = {"summary": ai_raw, "remove": [], "add": []}
 
-    # Match remove suggestions with actual track IDs from playlist
-    for r_item in ai.get("remove", []):
+    # Match remove suggestions with actual track IDs from playlist.
+    # La respuesta de la IA es JSON no confiable: puede venir sin "name"/"artist"
+    # o con items que no son dicts — usar .get() para no tirar 500.
+    remove_items = ai.get("remove") if isinstance(ai.get("remove"), list) else []
+    ai["remove"] = [r for r in remove_items if isinstance(r, dict)]
+    for r_item in ai["remove"]:
+        r_name = str(r_item.get("name") or "").lower()
+        r_artist = str(r_item.get("artist") or "").lower()
+        if not r_name:
+            continue
         for t in track_list:
-            if r_item["name"].lower() in t["name"].lower() and r_item["artist"].lower() in t["artist"].lower():
+            if r_name in t["name"].lower() and r_artist in t["artist"].lower():
                 r_item["id"] = t["id"]
                 r_item["uri"] = t["uri"]
                 r_item["image"] = t.get("image")
@@ -613,13 +643,15 @@ def api_apply():
     track_ids_to_add = []
     selected_ids = set()
     for item in to_add_raw:
+        if not isinstance(item, dict):
+            continue
         track = find_spotify_track(sp, item.get("name"), item.get("artist"), selected_ids)
         if track:
             selected_ids.add(track["id"])
             track_ids_to_add.append(track["id"])
             results["added"].append(candidate_label(track))
         else:
-            results["not_found"].append(f"{item['artist']} – {item['name']}")
+            results["not_found"].append(f"{item.get('artist', 'Artista desconocido')} – {item.get('name', 'Canción desconocida')}")
 
     if track_ids_to_add:
         try:
@@ -660,14 +692,16 @@ def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider,
         def resolve_one(it):
             # 1) intento exacto (título + artista). 2) si la IA inventó el título,
             # respaldo con una canción real del mismo artista.
-            track = find_spotify_track(sp, it.get("name"), it.get("artist"), exclude_snapshot, mood)
+            filtered = []
+            track = find_spotify_track(sp, it.get("name"), it.get("artist"), exclude_snapshot, mood, filtered_out=filtered)
             if track:
-                return (track, False)
+                return (track, False, False)
             if it.get("artist"):
                 fb = find_artist_fallback(sp, it.get("artist"), exclude_snapshot, mood)
                 if fb:
-                    return (fb, True)
-            return (None, False)
+                    return (fb, True, False)
+            # was_rejected: se encontró en Spotify pero el filtro del prompt la descartó.
+            return (None, False, bool(filtered))
 
         with ThreadPoolExecutor(max_workers=5) as pool:
             futures = [pool.submit(resolve_one, it) for it in items]
@@ -677,7 +711,7 @@ def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider,
                         f.cancel()
                     break
                 try:
-                    track, is_fallback = fut.result()
+                    track, is_fallback, was_rejected = fut.result()
                 except SpotifyException as e:
                     if getattr(e, "http_status", None) == 429:
                         fatal["error"] = ("Spotify limitó las peticiones (429) por demasiadas "
@@ -685,9 +719,9 @@ def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider,
                         for f in futures:
                             f.cancel()
                         break
-                    track, is_fallback = None, False
+                    track, is_fallback, was_rejected = None, False, False
                 except Exception:
-                    track, is_fallback = None, False
+                    track, is_fallback, was_rejected = None, False, False
                 if track and track["id"] not in selected_ids:
                     selected_ids.add(track["id"])
                     track_ids.append(track["id"])
@@ -704,7 +738,11 @@ def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider,
                         substitutes.append(label)
                     yield _event({"type": "progress", "done": len(track_ids), "total": count, "label": label})
                 elif not track:
-                    not_found.append(f"{it.get('artist', 'Artista desconocido')} – {it.get('name', 'Canción desconocida')}")
+                    suggestion_label = f"{it.get('artist', 'Artista desconocido')} – {it.get('name', 'Canción desconocida')}"
+                    if was_rejected:
+                        rejected.append(suggestion_label)
+                    else:
+                        not_found.append(suggestion_label)
 
     yield _event({"type": "status", "message": "La IA está eligiendo las canciones…"})
     ai_raw = call_ai(_create_prompt(name, mood, count, candidate_count), provider=provider, model=model)
@@ -777,7 +815,10 @@ def api_create():
     data = request.json
     mood = data.get("mood", "")
     name = data.get("name", "Mi Playlist IA")
-    count = max(5, min(int(data.get("count", 15)), 50))
+    try:
+        count = max(5, min(int(data.get("count", 15)), 50))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Cantidad de canciones inválida."}), 400
     candidate_count = min(count + 6, 55)
     deadline = time.monotonic() + 220
     provider = data.get("provider", "anthropic")
@@ -848,7 +889,10 @@ def api_add_to_playlist():
     data = request.json
     mood = data.get("mood", "")
     playlist_id = extract_playlist_id(data.get("url", ""))
-    count = max(1, min(int(data.get("count", 10)), 50))
+    try:
+        count = max(1, min(int(data.get("count", 10)), 50))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Cantidad de canciones inválida."}), 400
     candidate_count = min(count + 6, 55)
     deadline = time.monotonic() + 220
     provider = data.get("provider", "anthropic")
