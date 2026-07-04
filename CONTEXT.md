@@ -40,6 +40,19 @@ Hallazgos y fixes:
 
 Lo que ya estaba bien (verificado, no solo revisado): CSRF de OAuth con `state` correcto, todas las rutas `/api/*` exigen sesión, cero XSS en frontend (`escapeHtml()` consistente + auto-escape de Jinja), CORS no habilitado bloquea CSRF cross-origin de facto, nunca se commiteó un secreto, `debug=False`.
 
+### 2026-07-04 — Ronda de robustez (post-auditoría)
+Comprobación general sin hallazgos de seguridad nuevos; se aplicaron 8 fixes de robustez:
+1. `rejected` por fin se llena: `find_spotify_track()` acepta `filtered_out` y registra candidatos descartados por `track_allowed_by_prompt`; `resolve_items` clasifica la sugerencia como "rechazada por prompt" (en vez de "no encontrada") cuando Spotify sí la tenía pero el filtro la descartó. Antes la lista se declaraba y se mandaba al frontend pero nadie hacía append — la fila "Rechazada por prompt" del UI nunca aparecía.
+2. Filtro del prompt por **palabra completa** (` term ` con padding de espacios sobre el label normalizado), no substring: antes `"rock"` rechazaba "Rocket Man" y `"ron"` rechazaba cualquier título con "electronic". Ojo: `normalize_search_text` ya elimina contenido entre paréntesis, así que "(feat. X)" nunca llega al filtro — solo se filtra "feat" fuera de paréntesis (comportamiento de siempre).
+3. La respuesta JSON de la IA se trata como no confiable en `api_analyze`/`api_apply`: items sin `name`/`artist` o que no son dicts ya no tiran KeyError→500 (`.get()` + `isinstance`).
+4. `refresh_token_if_needed()`: si el refresh falla (acceso revocado en Spotify), limpia la sesión y devuelve `False` → el frontend recibe 401 "reconecta" en vez de un 500.
+5. `count` no numérico en `/api/create` y `/api/add_to_playlist` → 400 con mensaje claro (antes 500).
+6. `except:` desnudo de `api_analyze` → `except Exception:`.
+7. `SPOTIFY_SEARCH_CACHE`/`SPOTIFY_ARTIST_CACHE` con tope (`CACHE_MAX_ENTRIES = 500`): al llegar al tope se vacían (flush simple, no LRU — suficiente para proceso local).
+8. `SESSION_COOKIE_SAMESITE = "Lax"` (Flask no pone SameSite por defecto) — capa extra anti-CSRF.
+
+`requirements.txt` se queda con `>=` a propósito: con `==` no entran parches de seguridad solos y la app es local.
+
 ## Diseño / responsive
 
 App pensada para desktop. Revisión visual 2026-07-02 identificó oportunidades de UI; todas resueltas a la fecha.
