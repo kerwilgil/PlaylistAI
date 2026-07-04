@@ -76,6 +76,11 @@
   .user-name { font-size: 13px; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .logout-btn { font-size: 12px; color: var(--text-muted); cursor: pointer; text-decoration: none; }
   .logout-btn:hover { color: var(--text-secondary); }
+  .credit { margin-top: 14px; font-size: 11px; color: var(--text-muted); line-height: 1.6; }
+  .credit strong { font-weight: 600; color: var(--text-secondary); }
+  /* Version mobile: el sidebar no existe <768px, el credito va al final del contenido */
+  .credit-main { display: none; text-align: center; padding: 20px 0 4px; }
+  .hero .credit { margin-top: 48px; text-align: center; }
 
   /* ── MAIN ── */
   .main { overflow-y: auto; }
@@ -266,7 +271,8 @@
   @media (max-width: 768px) {
     .shell { grid-template-columns: 1fr; }
     .sidebar { display: none; }
-    .page { padding: 20px 20px calc(84px + env(safe-area-inset-bottom)); }
+    .page { padding: 20px 20px 12px; }
+    .credit-main { display: block; padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
 
     .mobile-topbar {
       display: flex; align-items: center; justify-content: space-between;
@@ -309,6 +315,9 @@
     <svg style="width:18px;height:18px;fill:#000" viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
     Conectar con Spotify
   </a>
+  <div class="credit">
+    Creado por <strong>Kerwil Gil</strong> · © <span class="credit-year">2026</span> Todos los derechos reservados
+  </div>
 </div>
 
 {% else %}
@@ -353,6 +362,10 @@
         <img class="user-avatar" id="user-avatar" src="" onerror="this.style.display='none'">
         <span class="user-name" id="user-name">...</span>
         <a href="/logout" class="logout-btn">Salir</a>
+      </div>
+      <div class="credit">
+        Creado por <strong>Kerwil Gil</strong><br>
+        © <span class="credit-year">2026</span> Todos los derechos reservados
       </div>
     </div>
   </aside>
@@ -559,6 +572,9 @@
       </div>
     </div>
 
+    <div class="credit credit-main">
+      Creado por <strong>Kerwil Gil</strong> · © <span class="credit-year">2026</span> Todos los derechos reservados
+    </div>
   </main>
 </div>
 
@@ -1015,6 +1031,10 @@ function saveProviderSettings() {
 loadProviders();
 </script>
 {% endif %}
+<script>
+// Año del copyright siempre actual (el 2026 del HTML es solo fallback sin JS)
+document.querySelectorAll('.credit-year').forEach(el => { el.textContent = new Date().getFullYear(); });
+</script>
 </body>
 </html>
 
