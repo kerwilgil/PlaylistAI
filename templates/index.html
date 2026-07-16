@@ -1013,10 +1013,17 @@ function updateModelSelect(provider) {
   const prov = providersData[provider];
   if (!prov || !prov.models) { wrap.style.display = 'none'; return; }
   wrap.style.display = 'block';
+
+  // Descarta modelos antiguos guardados en el navegador después de actualizar
+  // el catálogo. Así la UI y las peticiones usan siempre el mismo modelo válido.
+  if (!prov.models.some(m => m.id === aiConfig.model)) {
+    aiConfig.model = prov.models[0].id;
+    localStorage.setItem('ai_model', aiConfig.model);
+  }
+
   sel.innerHTML = prov.models.map(m =>
     `<option value="${m.id}" ${aiConfig.model === m.id ? 'selected' : ''}>${m.label}</option>`
   ).join('');
-  if (!aiConfig.model) aiConfig.model = prov.models[0].id;
 }
 
 function saveProviderSettings() {
@@ -1037,5 +1044,4 @@ document.querySelectorAll('.credit-year').forEach(el => { el.textContent = new D
 </script>
 </body>
 </html>
-
 
