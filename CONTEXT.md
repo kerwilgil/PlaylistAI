@@ -5,6 +5,16 @@ Notas operativas del proyecto que no están en el README. Mantener actualizado c
 ## Qué es
 Flask monolítico de un solo archivo (`app.py`) + frontend vanilla HTML/CSS/JS en `templates/index.html`. Curador de playlists de Spotify con IA (Anthropic/OpenAI/NVIDIA NIM). Uso personal, corre en `127.0.0.1:5000`.
 
+## Catálogo de modelos de IA
+
+Actualizado el 2026-07-16 contra la documentación oficial de OpenAI y Anthropic:
+
+- **OpenAI**: GPT-5.6 Terra (`gpt-5.6-terra`, predeterminado/recomendado), GPT-5.6 Sol (`gpt-5.6-sol`, máxima calidad) y GPT-5.6 Luna (`gpt-5.6-luna`, rápido/económico).
+- **Anthropic**: Claude Sonnet 5 (`claude-sonnet-5`, predeterminado/recomendado), Claude Opus 4.8 (`claude-opus-4-8`, máxima calidad) y Claude Haiku 4.5 (`claude-haiku-4-5-20251001`, rápido/barato).
+- **NVIDIA NIM**: conserva su catálogo actual y DeepSeek V4 Pro como predeterminado.
+
+Los modelos anteriores se retiraron del selector para mantener únicamente las familias vigentes. `updateModelSelect()` valida el modelo guardado en `localStorage`; si ya no existe para el proveedor seleccionado, lo reemplaza por el primer modelo vigente antes de enviar nuevas consultas.
+
 ## Gotchas conocidos del código
 
 ### `SpotifyOAuth(cache_handler=...)` — `None` NO desactiva el cache en disco
