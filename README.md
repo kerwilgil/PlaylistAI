@@ -86,9 +86,10 @@ Luego abre <http://127.0.0.1:5000> y conecta tu cuenta de Spotify.
 
 ## Modelos por defecto
 
-Por calidad, cada proveedor arranca en su mejor modelo (Claude Opus 4.8 /
-GPT-5.4 / DeepSeek V4 Pro). En *IA Config* puedes cambiar a uno más rápido
-(p. ej. Claude Sonnet 4.6) si prefieres velocidad.
+Cada proveedor arranca con una opción equilibrada y recomendada: Claude Sonnet 5,
+GPT-5.6 Terra o DeepSeek V4 Pro. En *IA Config* puedes elegir máxima calidad
+(Claude Opus 4.8 / GPT-5.6 Sol) o menor costo y latencia
+(Claude Haiku 4.5 / GPT-5.6 Luna).
 
 ## Solución de problemas
 

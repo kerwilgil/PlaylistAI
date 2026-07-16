@@ -84,21 +84,17 @@ PROVIDERS = {
     "anthropic": {
         "name": "Anthropic",
         "models": [
-            {"id": "claude-opus-4-8",    "label": "Claude Opus 4.8 (máx calidad · recomendado)"},
-            {"id": "claude-sonnet-4-6",  "label": "Claude Sonnet 4.6 (balanceado)"},
+            {"id": "claude-sonnet-5",    "label": "Claude Sonnet 5 (balanceado · recomendado)"},
+            {"id": "claude-opus-4-8",    "label": "Claude Opus 4.8 (máxima calidad)"},
             {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5 (rápido/barato)"},
         ]
     },
     "openai": {
         "name": "OpenAI",
         "models": [
-            {"id": "gpt-5.4",       "label": "Calidad alta · GPT-5.4 (recomendado)"},
-            {"id": "gpt-5.5",       "label": "Máxima calidad · GPT-5.5 (más lento)"},
-            {"id": "gpt-5.4-mini",  "label": "Balanceado · GPT-5.4 Mini"},
-            {"id": "gpt-5.4-nano",  "label": "Económico · GPT-5.4 Nano (mínimo costo / rápido)"},
-            {"id": "gpt-4.1",       "label": "Legacy calidad · GPT-4.1"},
-            {"id": "gpt-4.1-mini",  "label": "Legacy balanceado · GPT-4.1 Mini"},
-            {"id": "gpt-4.1-nano",  "label": "Legacy económico · GPT-4.1 Nano"},
+            {"id": "gpt-5.6-terra", "label": "GPT-5.6 Terra (balanceado · recomendado)"},
+            {"id": "gpt-5.6-sol",   "label": "GPT-5.6 Sol (máxima calidad)"},
+            {"id": "gpt-5.6-luna",  "label": "GPT-5.6 Luna (rápido/económico)"},
         ]
     },
     "nvidia": {
@@ -382,7 +378,7 @@ def call_ai(prompt, provider="anthropic", model=None):
 
     # ── Anthropic ──
     if provider == "anthropic":
-        model = model or "claude-sonnet-4-6"
+        model = model or "claude-sonnet-5"
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
             headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01",
@@ -398,7 +394,7 @@ def call_ai(prompt, provider="anthropic", model=None):
 
     # ── OpenAI ──
     elif provider == "openai":
-        model = model or "gpt-5.4-mini"
+        model = model or "gpt-5.6-terra"
         headers = {"Authorization": f"Bearer {OPENAI_KEY}", "content-type": "application/json"}
         if model.startswith("gpt-5"):
             r = requests.post(
@@ -1046,6 +1042,3 @@ def api_providers():
 
 if __name__ == "__main__":
     app.run(debug=False, use_reloader=False, port=5000)
-
-
-
