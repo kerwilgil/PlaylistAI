@@ -373,6 +373,23 @@ def find_artist_fallback(sp, artist, exclude_ids=None, mood=None):
             best_pop = pop
     return best
 
+
+def anthropic_response_text(data):
+    """Extrae únicamente los bloques de texto de una respuesta Messages API."""
+    content = data.get("content") if isinstance(data, dict) else None
+    if not isinstance(content, list):
+        return None
+
+    parts = []
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "text":
+            continue
+        text = block.get("text")
+        if isinstance(text, str) and text:
+            parts.append(text)
+    return "\n".join(parts) or None
+
+
 def call_ai(prompt, provider="anthropic", model=None):
     """Llama al proveedor de IA seleccionado y devuelve el texto de respuesta."""
 
@@ -390,7 +407,19 @@ def call_ai(prompt, provider="anthropic", model=None):
         data = r.json()
         if not r.ok:
             return f"Error Anthropic: {data.get('error', {}).get('message', r.text)}"
-        return data["content"][0]["text"]
+        text = anthropic_response_text(data)
+        if text:
+            return text
+        block_types = sorted({
+            str(block.get("type", "unknown"))
+            for block in data.get("content", [])
+            if isinstance(block, dict)
+        })
+        app.logger.error(
+            "Anthropic response without text blocks (types=%s)",
+            ",".join(block_types) or "none",
+        )
+        return "Error Anthropic: la respuesta no incluyó ningún bloque de texto."
 
     # ── OpenAI ──
     elif provider == "openai":
