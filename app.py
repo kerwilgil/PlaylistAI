@@ -396,12 +396,19 @@ def call_ai(prompt, provider="anthropic", model=None):
     # ── Anthropic ──
     if provider == "anthropic":
         model = model or "claude-sonnet-5"
+        payload = {
+            "model": model,
+            "max_tokens": 4000,
+            # Sonnet 5 activa adaptive thinking por defecto. Para estas tareas
+            # de JSON corto preferimos reservar todo el presupuesto al texto.
+            "thinking": {"type": "disabled"},
+            "messages": [{"role": "user", "content": prompt}],
+        }
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
             headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01",
                      "content-type": "application/json"},
-            json={"model": model, "max_tokens": 1500,
-                  "messages": [{"role": "user", "content": prompt}]},
+            json=payload,
             timeout=60
         )
         data = r.json()
@@ -410,14 +417,20 @@ def call_ai(prompt, provider="anthropic", model=None):
         text = anthropic_response_text(data)
         if text:
             return text
+        content = data.get("content") if isinstance(data, dict) else None
+        blocks = content if isinstance(content, list) else []
+        usage = data.get("usage") if isinstance(data, dict) else None
+        usage = usage if isinstance(usage, dict) else {}
         block_types = sorted({
             str(block.get("type", "unknown"))
-            for block in data.get("content", [])
+            for block in blocks
             if isinstance(block, dict)
         })
         app.logger.error(
-            "Anthropic response without text blocks (types=%s)",
+            "Anthropic response without text blocks (types=%s, stop_reason=%s, output_tokens=%s)",
             ",".join(block_types) or "none",
+            data.get("stop_reason", "unknown") if isinstance(data, dict) else "unknown",
+            usage.get("output_tokens", "unknown"),
         )
         return "Error Anthropic: la respuesta no incluyó ningún bloque de texto."
 

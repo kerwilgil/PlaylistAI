@@ -16,10 +16,14 @@ class AnthropicResponseTests(unittest.TestCase):
             ]
         }
 
-        with patch.object(app.requests, "post", return_value=response):
+        with patch.object(app.requests, "post", return_value=response) as post:
             result = app.call_ai("prueba", provider="anthropic")
 
         self.assertEqual(result, '{"summary":"ok"}\nfin')
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["model"], "claude-sonnet-5")
+        self.assertEqual(payload["max_tokens"], 4000)
+        self.assertEqual(payload["thinking"], {"type": "disabled"})
 
     def test_missing_text_block_returns_controlled_error(self):
         response = Mock()
