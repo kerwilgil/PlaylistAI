@@ -37,6 +37,8 @@ No usar `raise error` dentro de un errorhandler para "delegar" al manejo default
 ### Respuestas de Anthropic por bloques
 La Messages API no garantiza que `content[0]` sea texto: Claude puede anteponer bloques `thinking` u otros tipos al bloque `text`. `anthropic_response_text()` recorre toda la lista, ignora de forma explícita los bloques no textuales y concatena únicamente los `text`. No volver a leer la respuesta con `data["content"][0]["text"]`; además de causar `KeyError`, esa suposición puede intentar tratar razonamiento interno como respuesta visible.
 
+Sonnet 5 activa adaptive thinking por defecto y los tokens de razonamiento cuentan dentro de `max_tokens`. Con el límite antiguo de 1500 llegó a devolver solo un bloque `thinking` con `stop_reason=max_tokens`, sin respuesta visible. `call_ai()` envía `thinking: {"type": "disabled"}` para todos los modelos Anthropic del selector y usa `max_tokens=4000`: estas rutas requieren JSON breve y determinista, no razonamiento extendido. Si no llega texto, el log registra solo tipos de bloque, `stop_reason` y cantidad de tokens; nunca el contenido del razonamiento.
+
 ### Headers de seguridad
 `@app.after_request` agrega `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: same-origin` a toda respuesta. Relevante sobre todo si algún día se expone la app fuera de `127.0.0.1`.
 
