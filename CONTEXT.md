@@ -34,6 +34,9 @@ Dos error handlers separados:
 
 No usar `raise error` dentro de un errorhandler para "delegar" al manejo default de Flask — un re-raise ahí no re-despacha correctamente y convierte cualquier HTTPException (incluido 404) en un 500. Si se necesita delegar, `return error` (las instancias de `HTTPException` son respuestas WSGI válidas).
 
+### Respuestas de Anthropic por bloques
+La Messages API no garantiza que `content[0]` sea texto: Claude puede anteponer bloques `thinking` u otros tipos al bloque `text`. `anthropic_response_text()` recorre toda la lista, ignora de forma explícita los bloques no textuales y concatena únicamente los `text`. No volver a leer la respuesta con `data["content"][0]["text"]`; además de causar `KeyError`, esa suposición puede intentar tratar razonamiento interno como respuesta visible.
+
 ### Headers de seguridad
 `@app.after_request` agrega `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: same-origin` a toda respuesta. Relevante sobre todo si algún día se expone la app fuera de `127.0.0.1`.
 
