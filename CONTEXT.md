@@ -5,6 +5,31 @@ Notas operativas del proyecto que no están en el README. Mantener actualizado c
 ## Qué es
 Flask monolítico de un solo archivo (`app.py`) + frontend vanilla HTML/CSS/JS en `templates/index.html`. Curador de playlists de Spotify con IA (Anthropic/OpenAI/NVIDIA NIM). Uso personal, corre en `127.0.0.1:5000`.
 
+## Builds de escritorio
+
+Desde 2026-07-23 hay builds reproducibles con PyInstaller 6.21:
+
+- `desktop.py` levanta el mismo Flask únicamente en `127.0.0.1:5000`, abre el
+  navegador y mantiene una ventana pequeña para abrir la UI, editar `.env` y
+  detener correctamente el servidor.
+- `scripts/build_windows.ps1` genera un binario de un solo archivo en
+  `dist/PlaylistAI.exe`.
+- `scripts/build_macos.sh` genera `dist/PlaylistAI.app`, aplica firma ad hoc para
+  uso local, la verifica con `codesign` y crea `dist/PlaylistAI-macOS.zip`.
+- PyInstaller no es cross-compiler: el `.exe` se construye en Windows y el
+  `.app` en macOS. El build macOS es nativo para la arquitectura del Python/Mac
+  usado para compilar.
+
+Las credenciales nunca se empaquetan. `.env.example` sí viaja como recurso y el
+primer arranque crea una copia escribible: junto a `PlaylistAI.exe` en Windows y
+en `~/Library/Application Support/PlaylistAI/.env` en macOS. Los logs del
+lanzador se guardan en el mismo directorio de configuración. Las variables
+`PLAYLISTAI_CONFIG_DIR` y `PLAYLISTAI_ENV_FILE` permiten sobrescribir estas rutas;
+`PLAYLISTAI_NO_BROWSER=1` desactiva las aperturas automáticas para pruebas.
+
+La firma ad hoc de macOS solo cubre uso local. Distribuir a otros Macs sin avisos
+de Gatekeeper exige certificado Developer ID y notarización de Apple.
+
 ## Catálogo de modelos de IA
 
 Actualizado el 2026-07-16 contra la documentación oficial de OpenAI y Anthropic:
