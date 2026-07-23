@@ -391,20 +391,71 @@ def anthropic_response_text(data):
     return "\n".join(parts) or None
 
 
-def call_ai(prompt, provider="anthropic", model=None):
+def parse_ai_json(raw):
+    """Convierte una respuesta de IA en JSON aunque venga dentro de fences o con texto extra."""
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError("La respuesta de IA está vacía.")
+
+    cleaned = raw.strip().lstrip("\ufeff")
+    if cleaned.startswith("```"):
+        first_newline = cleaned.find("\n")
+        if first_newline != -1:
+            cleaned = cleaned[first_newline + 1:]
+        if cleaned.rstrip().endswith("```"):
+            cleaned = cleaned.rstrip()[:-3].rstrip()
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as original_error:
+        starts = [index for index in (cleaned.find("{"), cleaned.find("[")) if index >= 0]
+        if not starts:
+            raise original_error
+        try:
+            value, _ = json.JSONDecoder().raw_decode(cleaned[min(starts):])
+            return value
+        except json.JSONDecodeError:
+            raise original_error
+
+
+def parse_playlist_json(raw):
+    """Valida la forma mínima que necesita el resolvedor de canciones."""
+    value = parse_ai_json(raw)
+    if not isinstance(value, dict) or not isinstance(value.get("tracks"), list):
+        raise ValueError("La respuesta no contiene un objeto con una lista 'tracks'.")
+    tracks = value["tracks"]
+    if not tracks:
+        raise ValueError("La lista 'tracks' está vacía.")
+    if any(
+        not isinstance(track, dict)
+        or not isinstance(track.get("name"), str)
+        or not track["name"].strip()
+        or not isinstance(track.get("artist"), str)
+        or not track["artist"].strip()
+        for track in tracks
+    ):
+        raise ValueError("Una o más canciones no contienen nombre y artista válidos.")
+    return value
+
+
+def call_ai(prompt, provider="anthropic", model=None, max_output_tokens=5000, output_schema=None):
     """Llama al proveedor de IA seleccionado y devuelve el texto de respuesta."""
+    max_output_tokens = max(512, min(int(max_output_tokens), 16000))
 
     # ── Anthropic ──
     if provider == "anthropic":
         model = model or "claude-sonnet-5"
         payload = {
             "model": model,
-            "max_tokens": 4000,
+            "max_tokens": max_output_tokens,
             # Sonnet 5 activa adaptive thinking por defecto. Para estas tareas
             # de JSON corto preferimos reservar todo el presupuesto al texto.
             "thinking": {"type": "disabled"},
             "messages": [{"role": "user", "content": prompt}],
         }
+        if output_schema:
+            payload["output_config"] = {
+                "format": {"type": "json_schema", "schema": output_schema}
+            }
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
             headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01",
@@ -417,6 +468,12 @@ def call_ai(prompt, provider="anthropic", model=None):
             return f"Error Anthropic: {data.get('error', {}).get('message', r.text)}"
         text = anthropic_response_text(data)
         if text:
+            if data.get("stop_reason") == "max_tokens":
+                app.logger.warning(
+                    "Anthropic response truncated at max_tokens=%s (output_tokens=%s)",
+                    max_output_tokens,
+                    (data.get("usage") or {}).get("output_tokens", "unknown"),
+                )
             return text
         content = data.get("content") if isinstance(data, dict) else None
         blocks = content if isinstance(content, list) else []
@@ -443,14 +500,14 @@ def call_ai(prompt, provider="anthropic", model=None):
             r = requests.post(
                 "https://api.openai.com/v1/responses",
                 headers=headers,
-                json={"model": model, "max_output_tokens": 5000, "input": prompt},
+                json={"model": model, "max_output_tokens": max_output_tokens, "input": prompt},
                 timeout=60
             )
         else:
             r = requests.post(
                 "https://api.openai.com/v1/chat/completions",
                 headers=headers,
-                json={"model": model, "max_tokens": 5000,
+                json={"model": model, "max_tokens": max_output_tokens,
                       "messages": [{"role": "user", "content": prompt}]},
                 timeout=60
             )
@@ -476,7 +533,7 @@ def call_ai(prompt, provider="anthropic", model=None):
             "https://integrate.api.nvidia.com/v1/chat/completions",
             headers={"Authorization": f"Bearer {NVIDIA_KEY}",
                      "content-type": "application/json"},
-            json={"model": model, "max_tokens": 1500,
+            json={"model": model, "max_tokens": max_output_tokens,
                   "messages": [{"role": "user", "content": prompt}]},
             timeout=60
         )
@@ -622,8 +679,7 @@ Responde SOLO en este formato JSON (sin markdown, sin texto extra):
         return jsonify({"error": ai_error}), 400
     ai_raw = call_ai(prompt, provider=provider, model=model)
     try:
-        ai_raw_clean = ai_raw.strip().replace("```json","").replace("```","").strip()
-        ai = json.loads(ai_raw_clean)
+        ai = parse_ai_json(ai_raw)
     except Exception:
         ai = {"summary": ai_raw, "remove": [], "add": []}
     if not isinstance(ai, dict):
@@ -784,12 +840,44 @@ def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider,
                         not_found.append(suggestion_label)
 
     yield _event({"type": "status", "message": "La IA está eligiendo las canciones…"})
-    ai_raw = call_ai(_create_prompt(name, mood, count, candidate_count), provider=provider, model=model)
+    create_prompt = _create_prompt(name, mood, count, candidate_count)
+    token_budget = min(12000, max(6000, candidate_count * 160))
+    ai_raw = call_ai(
+        create_prompt,
+        provider=provider,
+        model=model,
+        max_output_tokens=token_budget,
+        output_schema=_playlist_output_schema(include_description=True),
+    )
     try:
-        ai = json.loads(ai_raw.strip().replace("```json", "").replace("```", "").strip())
-    except Exception:
-        fatal["error"] = f"La IA no devolvió una lista válida. Respuesta: {ai_raw[:200]}"
-        return
+        ai = parse_playlist_json(ai_raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        app.logger.warning(
+            "Invalid playlist JSON; retrying once (provider=%s, model=%s, chars=%s)",
+            provider,
+            model or "default",
+            len(ai_raw) if isinstance(ai_raw, str) else 0,
+        )
+        second_prompt = (
+            create_prompt
+            + "\n\nIMPORTANTE: El intento anterior produjo JSON incompleto o inválido. "
+              "Devuelve el objeto completo, compacto y correctamente cerrado."
+        )
+        ai_raw = call_ai(
+            second_prompt,
+            provider=provider,
+            model=model,
+            max_output_tokens=min(16000, token_budget + 3000),
+            output_schema=_playlist_output_schema(include_description=True),
+        )
+        try:
+            ai = parse_playlist_json(ai_raw)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            fatal["error"] = (
+                "La IA devolvió una lista incompleta o inválida después de dos intentos. "
+                f"Respuesta: {str(ai_raw)[:200]}"
+            )
+            return
 
     result["description"] = ai.get("description", mood)
     yield _event({"type": "status", "message": "Verificando canciones en Spotify…"})
@@ -801,9 +889,15 @@ def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider,
     if len(track_ids) < count and time.monotonic() < deadline:
         needed = count - len(track_ids)
         yield _event({"type": "status", "message": f"Buscando {needed} canción(es) más con la IA…"})
-        retry_raw = call_ai(_retry_prompt(name, mood, needed, added, not_found), provider=provider, model=model)
+        retry_raw = call_ai(
+            _retry_prompt(name, mood, needed, added, not_found),
+            provider=provider,
+            model=model,
+            max_output_tokens=min(10000, max(4000, needed * 180)),
+            output_schema=_playlist_output_schema(include_description=False),
+        )
         try:
-            retry_ai = json.loads(retry_raw.strip().replace("```json", "").replace("```", "").strip())
+            retry_ai = parse_playlist_json(retry_raw)
         except Exception:
             retry_ai = {"tracks": []}
         yield from resolve_items(retry_ai.get("tracks", []), mark_replacement=True)
@@ -817,9 +911,15 @@ def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider,
         repair_round += 1
         needed = count - len(track_ids)
         yield _event({"type": "status", "message": f"Completando la lista ({len(track_ids)}/{count})…"})
-        repair_raw = call_ai(_repair_prompt(name, mood, needed, added, rejected, not_found), provider=provider, model=model)
+        repair_raw = call_ai(
+            _repair_prompt(name, mood, needed, added, rejected, not_found),
+            provider=provider,
+            model=model,
+            max_output_tokens=min(10000, max(4000, needed * 180)),
+            output_schema=_playlist_output_schema(include_description=False),
+        )
         try:
-            repair_ai = json.loads(repair_raw.strip().replace("```json", "").replace("```", "").strip())
+            repair_ai = parse_playlist_json(repair_raw)
         except Exception:
             repair_ai = {"tracks": []}
         before_count = len(track_ids)
@@ -1001,6 +1101,38 @@ def api_add_to_playlist():
             yield _event({"type": "error", "error": f"Error interno: {str(e)}"})
 
     return _ndjson_response(generate())
+
+
+def _playlist_output_schema(include_description):
+    """Esquema compacto compartido por la generación inicial y sus reemplazos."""
+    track_schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "artist": {"type": "string"},
+        },
+        "required": ["name", "artist"],
+        "additionalProperties": False,
+    }
+    properties = {
+        "tracks": {
+            "type": "array",
+            "items": track_schema,
+        }
+    }
+    required = ["tracks"]
+    if include_description:
+        properties = {
+            "description": {"type": "string"},
+            **properties,
+        }
+        required = ["description", "tracks"]
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": False,
+    }
 
 
 def _create_prompt(name, mood, count, candidate_count):

@@ -10,15 +10,24 @@ Flask monolítico de un solo archivo (`app.py`) + frontend vanilla HTML/CSS/JS e
 Desde 2026-07-23 hay builds reproducibles con PyInstaller 6.21:
 
 - `desktop.py` levanta el mismo Flask únicamente en `127.0.0.1:5000`, abre el
-  navegador y mantiene una ventana pequeña para abrir la UI, editar `.env` y
-  detener correctamente el servidor.
+  navegador y permanece silencioso en segundo plano, sin consola ni ventana
+  flotante. Una segunda ejecución detecta el servidor existente, abre la página
+  y termina sin crear otra instancia.
 - `scripts/build_windows.ps1` genera un binario de un solo archivo en
-  `dist/PlaylistAI.exe`.
-- `scripts/build_macos.sh` genera `dist/PlaylistAI.app`, aplica firma ad hoc para
-  uso local, la verifica con `codesign` y crea `dist/PlaylistAI-macOS.zip`.
+  `dist/windows/PlaylistAI.exe`.
+- `scripts/build_macos.sh` genera `dist/macos/PlaylistAI.app`, aplica firma ad
+  hoc para uso local, la verifica con `codesign` y crea
+  `dist/macos/PlaylistAI-macOS.zip`.
+- `assets/playlistai-icon.ico` y `assets/playlistai-icon.icns` contienen el icono
+  nativo de cada plataforma; `assets/playlistai-icon.png` es la fuente maestra
+  transparente de 1024×1024.
 - PyInstaller no es cross-compiler: el `.exe` se construye en Windows y el
   `.app` en macOS. El build macOS es nativo para la arquitectura del Python/Mac
   usado para compilar.
+
+Los scripts eliminan `build/` después de validar el artefacto final. El build de
+Windows también retira ejecutables con nombres antiguos para no conservar
+duplicados ni confundirlos con la versión vigente.
 
 Las credenciales nunca se empaquetan. `.env.example` sí viaja como recurso y el
 primer arranque crea una copia escribible: junto a `PlaylistAI.exe` en Windows y
@@ -62,7 +71,7 @@ No usar `raise error` dentro de un errorhandler para "delegar" al manejo default
 ### Respuestas de Anthropic por bloques
 La Messages API no garantiza que `content[0]` sea texto: Claude puede anteponer bloques `thinking` u otros tipos al bloque `text`. `anthropic_response_text()` recorre toda la lista, ignora de forma explícita los bloques no textuales y concatena únicamente los `text`. No volver a leer la respuesta con `data["content"][0]["text"]`; además de causar `KeyError`, esa suposición puede intentar tratar razonamiento interno como respuesta visible.
 
-Sonnet 5 activa adaptive thinking por defecto y los tokens de razonamiento cuentan dentro de `max_tokens`. Con el límite antiguo de 1500 llegó a devolver solo un bloque `thinking` con `stop_reason=max_tokens`, sin respuesta visible. `call_ai()` envía `thinking: {"type": "disabled"}` para todos los modelos Anthropic del selector y usa `max_tokens=4000`: estas rutas requieren JSON breve y determinista, no razonamiento extendido. Si no llega texto, el log registra solo tipos de bloque, `stop_reason` y cantidad de tokens; nunca el contenido del razonamiento.
+Sonnet 5 activa adaptive thinking por defecto y los tokens de razonamiento cuentan dentro de `max_tokens`. Con el límite antiguo de 1500 llegó a devolver solo un bloque `thinking` con `stop_reason=max_tokens`, sin respuesta visible. `call_ai()` envía `thinking: {"type": "disabled"}` para todos los modelos Anthropic del selector. La creación de playlists calcula un presupuesto de 6.000–12.000 tokens según el número de candidatos y puede subir hasta 16.000 en un único reintento automático. Además, Anthropic recibe `output_config.format` con JSON Schema para garantizar la forma `{description, tracks}` (o `{tracks}` en reemplazos). `parse_ai_json()` tolera fences y texto periférico; `parse_playlist_json()` valida nombre/artista y rechaza salidas vacías o truncadas antes de buscar en Spotify. Si el primer resultado es inválido se reintenta una vez; si no llega texto, el log registra solo tipos de bloque, `stop_reason` y cantidad de tokens, nunca el contenido del razonamiento.
 
 ### Headers de seguridad
 `@app.after_request` agrega `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: same-origin` a toda respuesta. Relevante sobre todo si algún día se expone la app fuera de `127.0.0.1`.
@@ -97,6 +106,13 @@ Comprobación general sin hallazgos de seguridad nuevos; se aplicaron 8 fixes de
 
 App pensada para desktop. Revisión visual 2026-07-02 identificó oportunidades de UI; todas resueltas a la fecha.
 
+- **Tema de interfaz** (2026-07-23): tres preferencias persistidas en
+  `localStorage` bajo `playlistai_theme`: `system` (predeterminada), `dark` y
+  `light`. El atributo `data-theme` se aplica en `<html>` antes de cargar el CSS
+  para evitar parpadeos. `system` usa `prefers-color-scheme` y reacciona a
+  cambios del sistema operativo sin recargar. Hay acceso rápido en login/sidebar
+  y un selector con etiquetas en Configuración; todos los controles se
+  sincronizan con `aria-pressed`.
 - **Breakpoint 1180px** (tablets landscape y laptops de 13"): sidebar 240px→208px, se quita `max-width:900px` del contenido, checkboxes de tracks 16px→20px (touch), más padding en botones.
 - **Nav mobile <768px**: antes el sidebar se ocultaba por completo sin reemplazo (usuario quedaba atado a la página que cargó). Ahora hay `.mobile-topbar` (logo + avatar + "Salir", `position:sticky`) y `.mobile-tabbar` (4 botones, `position:fixed` abajo, mismo `data-page` que el sidebar). `showPage(name)` en el JS ya no depende del `event` global — usa `document.querySelectorAll('[data-page]')` para sincronizar el estado activo entre sidebar y tabbar a la vez. `.page` gana `padding-bottom` extra (`calc(84px + env(safe-area-inset-bottom))`) para no quedar tapada por el tabbar fijo.
 - **Labels sin `for=`**: los 8 `<label class="input-label">` del formulario ahora tienen `for="<id-del-input>"` (playlist-url, create-name, create-mood, create-count, add-url, add-mood, add-count, model-select).
