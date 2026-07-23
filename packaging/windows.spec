@@ -11,7 +11,6 @@ a = Analysis(
     binaries=[],
     datas=[
         (os.path.join(project_root, "templates"), "templates"),
-        (os.path.join(project_root, "static"), "static"),
         (os.path.join(project_root, ".env.example"), "."),
     ],
     hiddenimports=[],
@@ -43,4 +42,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=os.path.join(project_root, "assets", "playlistai-icon.ico"),
 )

@@ -11,7 +11,6 @@ a = Analysis(
     binaries=[],
     datas=[
         (os.path.join(project_root, "templates"), "templates"),
-        (os.path.join(project_root, "static"), "static"),
         (os.path.join(project_root, ".env.example"), "."),
     ],
     hiddenimports=[],
@@ -53,11 +52,12 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="PlaylistAI.app",
-    icon=None,
+    icon=os.path.join(project_root, "assets", "playlistai-icon.icns"),
     bundle_identifier="app.playlistai.desktop",
     info_plist={
         "CFBundleDisplayName": "PlaylistAI",
         "CFBundleName": "PlaylistAI",
+        "LSUIElement": True,
         "NSHighResolutionCapable": True,
     },
 )

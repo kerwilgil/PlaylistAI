@@ -12,6 +12,9 @@ contra el catálogo real antes de crearla.
   qué agregar.
 - **Multi-proveedor de IA**: Anthropic (Claude), OpenAI (GPT) y NVIDIA NIM,
   seleccionables desde *IA Config*.
+- **Tema adaptable**: Sistema (predeterminado), Oscuro o Claro. La preferencia se
+  guarda en el navegador; el modo Sistema sigue automáticamente la apariencia
+  configurada en Windows o macOS.
 
 ## Cómo funciona (creación)
 
@@ -87,8 +90,12 @@ Luego abre <http://127.0.0.1:5000> y conecta tu cuenta de Spotify.
 ## Aplicación de escritorio
 
 Los builds de escritorio siguen siendo completamente locales: levantan PlaylistAI
-solo en `127.0.0.1:5000` y abren la interfaz en tu navegador. Incluyen una pequeña
-ventana para abrir la aplicación, editar la configuración y cerrar el servidor.
+solo en `127.0.0.1:5000` y abren la interfaz en tu navegador. Se ejecutan
+silenciosamente en segundo plano, sin consola ni ventana flotante. Cerrar el
+navegador no detiene el servidor; volver a ejecutar la aplicación reabre la
+página sin iniciar otra copia.
+El icono propio de PlaylistAI combina una lista, una onda musical y un destello de
+IA; se incluye en los builds de Windows y macOS.
 
 ### Crear el `.exe` de Windows
 
@@ -98,9 +105,25 @@ Desde PowerShell:
 .\scripts\build_windows.ps1
 ```
 
-El resultado queda en `dist\PlaylistAI.exe`. El primer arranque crea
-`dist\.env` desde la plantilla y lo abre para que añadas tus credenciales. El
-archivo `.env` nunca se incorpora al ejecutable.
+El resultado queda, desde la raíz del repositorio, en:
+
+```text
+.\dist\windows\PlaylistAI.exe
+```
+
+Para mostrar su ruta completa en PowerShell:
+
+```powershell
+(Resolve-Path .\dist\windows\PlaylistAI.exe).Path
+```
+
+El primer arranque crea `dist\windows\.env` desde la plantilla y lo abre para que
+añadas tus credenciales; guarda el archivo y vuelve a ejecutar
+`PlaylistAI.exe`. El
+archivo `.env` nunca se incorpora al ejecutable. Para detener completamente el
+servidor en Windows, finaliza `PlaylistAI.exe` desde el Administrador de tareas.
+La carpeta `dist\` está excluida de Git: el binario no se descarga mediante
+`git pull` y debe generarse en Windows ejecutando el script de build.
 
 ### Crear el `.app` de macOS
 
@@ -111,8 +134,8 @@ Mac donde se usará la aplicación.
 bash scripts/build_macos.sh
 ```
 
-Los resultados quedan en `dist/PlaylistAI.app` y
-`dist/PlaylistAI-macOS.zip`. La configuración se guarda en
+Los resultados quedan en `dist/macos/PlaylistAI.app` y
+`dist/macos/PlaylistAI-macOS.zip`. La configuración se guarda en
 `~/Library/Application Support/PlaylistAI/.env`, fuera del bundle. El script
 aplica una firma ad hoc adecuada para uso local; distribuir el `.app` a otros
 equipos requeriría una identidad Developer ID y notarización de Apple.
