@@ -20,19 +20,31 @@ uv run \
   pyinstaller \
   --noconfirm \
   --clean \
+  --distpath dist/macos \
   packaging/macos.spec
 
 # Firma ad hoc suficiente para ejecutar el build local en el mismo Mac.
-codesign --force --deep --sign - "dist/PlaylistAI.app"
-codesign --verify --deep --strict --verbose=2 "dist/PlaylistAI.app"
+codesign --force --deep --sign - "dist/macos/PlaylistAI.app"
+codesign --verify --deep --strict --verbose=2 "dist/macos/PlaylistAI.app"
 
-rm -f "dist/PlaylistAI-macOS.zip"
-ditto -c -k --keepParent "dist/PlaylistAI.app" "dist/PlaylistAI-macOS.zip"
+rm -f "dist/macos/PlaylistAI-macOS.zip"
+ditto -c -k --keepParent \
+  "dist/macos/PlaylistAI.app" \
+  "dist/macos/PlaylistAI-macOS.zip"
+
+BUILD_DIR="$PROJECT_ROOT/build"
+case "$BUILD_DIR" in
+  "$PROJECT_ROOT"/*) rm -rf -- "$BUILD_DIR" ;;
+  *)
+    echo "La ruta temporal calculada quedó fuera del repositorio: $BUILD_DIR" >&2
+    exit 1
+    ;;
+esac
 
 echo ""
 echo "Build listo:"
-echo "  $PROJECT_ROOT/dist/PlaylistAI.app"
-echo "  $PROJECT_ROOT/dist/PlaylistAI-macOS.zip"
+echo "  $PROJECT_ROOT/dist/macos/PlaylistAI.app"
+echo "  $PROJECT_ROOT/dist/macos/PlaylistAI-macOS.zip"
 echo ""
 echo "La configuración se guardará en:"
 echo "  ~/Library/Application Support/PlaylistAI/.env"
