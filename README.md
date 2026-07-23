@@ -84,6 +84,39 @@ Luego abre <http://127.0.0.1:5000> y conecta tu cuenta de Spotify.
 > resolver dependencias automaticamente. Si no, crea un entorno local `.venv`,
 > instala `requirements.txt` con `pip` y corre `python app.py`.
 
+## Aplicación de escritorio
+
+Los builds de escritorio siguen siendo completamente locales: levantan PlaylistAI
+solo en `127.0.0.1:5000` y abren la interfaz en tu navegador. Incluyen una pequeña
+ventana para abrir la aplicación, editar la configuración y cerrar el servidor.
+
+### Crear el `.exe` de Windows
+
+Desde PowerShell:
+
+```powershell
+.\scripts\build_windows.ps1
+```
+
+El resultado queda en `dist\PlaylistAI.exe`. El primer arranque crea
+`dist\.env` desde la plantilla y lo abre para que añadas tus credenciales. El
+archivo `.env` nunca se incorpora al ejecutable.
+
+### Crear el `.app` de macOS
+
+PyInstaller no hace compilación cruzada: este paso debe ejecutarse en el propio
+Mac donde se usará la aplicación.
+
+```bash
+bash scripts/build_macos.sh
+```
+
+Los resultados quedan en `dist/PlaylistAI.app` y
+`dist/PlaylistAI-macOS.zip`. La configuración se guarda en
+`~/Library/Application Support/PlaylistAI/.env`, fuera del bundle. El script
+aplica una firma ad hoc adecuada para uso local; distribuir el `.app` a otros
+equipos requeriría una identidad Developer ID y notarización de Apple.
+
 ## Modelos por defecto
 
 Cada proveedor arranca con una opción equilibrada y recomendada: Claude Sonnet 5,
