@@ -7,6 +7,7 @@ from spotipy.oauth2 import SpotifyOAuth
 from spotipy.exceptions import SpotifyException
 from spotipy.cache_handler import MemoryCacheHandler
 import spotipy
+from runtime_paths import env_file_path
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -62,7 +63,7 @@ def config_value(*names):
             return value
     return ""
 
-load_dotenv()
+load_dotenv(env_file_path())
 
 CLIENT_ID     = config_value("SPOTIFY_CLIENT_ID", "SPOTIPY_CLIENT_ID")
 CLIENT_SECRET = config_value("SPOTIFY_CLIENT_SECRET", "SPOTIPY_CLIENT_SECRET")
