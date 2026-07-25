@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/git-guardrails.py"
+            ],
+            "timeout": 10,
+            "statusMessage": "git-guardrails"
+          }
+        ]
+      }
+    ]
+  }
+}
