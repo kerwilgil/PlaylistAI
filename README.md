@@ -1,8 +1,29 @@
-# PlaylistAI
+<p align="center">
+  <img src="assets/playlistai-icon.png" alt="Icono de PlaylistAI: lista musical con una onda y un destello de IA" width="180">
+</p>
 
-Curador inteligente de playlists de Spotify con IA. Describe un mood o concepto y
-la app genera la playlist directo en tu cuenta de Spotify, verificando cada canción
-contra el catálogo real antes de crearla.
+<h1 align="center">PlaylistAI</h1>
+
+<p align="center">
+  Curador inteligente de playlists de Spotify con IA.<br>
+  Describe una idea y recibe una playlist verificada contra el catálogo real de Spotify.
+</p>
+
+<p align="center">
+  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v0.1.0"><strong>Descargar PlaylistAI 0.1.0</strong></a>
+</p>
+
+## Descargar
+
+- **Windows 10/11 (x64):** descarga
+  [`PlaylistAI-0.1.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v0.1.0/PlaylistAI-0.1.0-Windows-x64.zip),
+  extrae la carpeta y abre `PlaylistAI.exe`.
+- **macOS:** descarga el código fuente desde la
+  [release 0.1.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v0.1.0)
+  y genera `PlaylistAI.app` en el propio Mac con `bash scripts/build_macos.sh`.
+
+La aplicación funciona localmente en `127.0.0.1:5000`. Tus credenciales permanecen
+en el archivo `.env` de tu equipo y no se incorporan al ejecutable.
 
 ## Funciones
 
@@ -51,7 +72,7 @@ contra el catálogo real antes de crearla.
    NVIDIA_API_KEY=
    ```
 
-   Si `.env` no existe, los scripts de arranque lo crean automaticamente desde
+   Si `.env` no existe, los scripts de arranque lo crean automáticamente desde
    `.env.example`. Basta **una** API key de IA para usar las funciones de
    análisis/creación.
 
@@ -83,8 +104,8 @@ bash start.sh
 
 Luego abre <http://127.0.0.1:5000> y conecta tu cuenta de Spotify.
 
-> Si [`uv`](https://docs.astral.sh/uv/) esta instalado, el arranque lo usa para
-> resolver dependencias automaticamente. Si no, crea un entorno local `.venv`,
+> Si [`uv`](https://docs.astral.sh/uv/) está instalado, el arranque lo usa para
+> resolver dependencias automáticamente. Si no, crea un entorno local `.venv`,
 > instala `requirements.txt` con `pip` y corre `python app.py`.
 
 ## Aplicación de escritorio
@@ -122,8 +143,9 @@ añadas tus credenciales; guarda el archivo y vuelve a ejecutar
 `PlaylistAI.exe`. El
 archivo `.env` nunca se incorpora al ejecutable. Para detener completamente el
 servidor en Windows, finaliza `PlaylistAI.exe` desde el Administrador de tareas.
-La carpeta `dist\` está excluida de Git: el binario no se descarga mediante
-`git pull` y debe generarse en Windows ejecutando el script de build.
+La carpeta `dist\` está excluida de Git. Puedes descargar el binario desde la
+[release 0.1.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v0.1.0) o
+generarlo en Windows ejecutando el script de build.
 
 ### Crear el `.app` de macOS
 
