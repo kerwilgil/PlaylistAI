@@ -10,6 +10,18 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Flask-3.1.3%2B-000000?logo=flask&logoColor=white" alt="Flask 3.1.3 o superior">
+  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12 o superior">
+  <a href="README.md"><img src="https://img.shields.io/badge/idiomas-ES%20%7C%20EN-0F766E" alt="Español e inglés"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-blue" alt="Licencia MIT"></a>
+</p>
+
+<p align="center">
+  Creado por <a href="https://github.com/kerwilgil"><strong>Kerwil Gil</strong></a>
+  · <a href="README.en.md">Read in English</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v0.1.0"><strong>Descargar PlaylistAI 0.1.0</strong></a>
 </p>
 
@@ -203,3 +215,14 @@ Pensada para uso en desktop, pero funciona en cualquier tamaño:
 
 Labels de formulario enlazados a su input (`for=`/`id`), y el texto secundario
 (`--text-muted`) cumple contraste WCAG AA (~4.6:1) sobre el fondo oscuro.
+
+## Creador
+
+PlaylistAI fue creado y es mantenido por
+[Kerwil Gil](https://github.com/kerwilgil).
+
+## Licencia
+
+PlaylistAI se distribuye bajo la [Licencia MIT](LICENSE).
+
+Copyright © 2026 Kerwil Gil.
