@@ -12,6 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Flask-3.1.3%2B-000000?logo=flask&logoColor=white" alt="Flask 3.1.3 or newer">
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12 or newer">
+  <img src="https://img.shields.io/badge/version-1.0.0-1DB954" alt="Version 1.0.0">
   <a href="README.md"><img src="https://img.shields.io/badge/languages-ES%20%7C%20EN-0F766E" alt="Spanish and English"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
 </p>
@@ -22,16 +23,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v0.1.0"><strong>Download PlaylistAI 0.1.0</strong></a>
+  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.0.0"><strong>Download PlaylistAI 1.0.0</strong></a>
 </p>
 
 ## Download
 
 - **Windows 10/11 (x64):** download
-  [`PlaylistAI-0.1.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v0.1.0/PlaylistAI-0.1.0-Windows-x64.zip),
+  [`PlaylistAI-1.0.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.0.0/PlaylistAI-1.0.0-Windows-x64.zip),
   extract the folder, and open `PlaylistAI.exe`.
 - **macOS:** download the source code from
-  [release 0.1.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v0.1.0)
+  [release 1.0.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.0.0)
   and build `PlaylistAI.app` on the Mac with `bash scripts/build_macos.sh`.
 
 PlaylistAI runs locally on `127.0.0.1:5000`. Your credentials remain in the
@@ -43,7 +44,8 @@ PlaylistAI runs locally on `127.0.0.1:5000`. Your credentials remain in the
   PlaylistAI creates the playlist in Spotify with live verification progress.
 - **Analyze playlists:** paste a Spotify playlist link and receive suggestions
   for tracks to remove or add.
-- **Multiple AI providers:** choose Anthropic Claude, OpenAI, or NVIDIA NIM.
+- **Two AI access modes:** use a local Claude Code or Codex subscription, or an
+  Anthropic, OpenAI, or NVIDIA NIM API key.
 - **Adaptive theme:** System (default), Dark, or Light, with a persistent browser
   preference.
 
@@ -79,7 +81,26 @@ PlaylistAI runs locally on `127.0.0.1:5000`. Your credentials remain in the
    NVIDIA_API_KEY=
    ```
 
-   You only need one configured AI provider.
+   Spotify credentials are always required. For AI access, configure one API
+   key or use a compatible local subscription.
+
+### Use Claude Code or Codex without an AI API key
+
+1. Install the relevant CLI and authenticate it from a terminal:
+
+   ```text
+   claude
+   codex login
+   ```
+
+2. Open *AI Configuration → Local subscription*.
+3. Select **Claude Code** or **Codex**, choose a model, and save.
+
+PlaylistAI uses the existing local login without reading or storing account
+details. Each request runs without tools or session persistence; Codex runs
+read-only in a temporary directory. API-key environment variables are removed
+from the child process to prevent accidental API billing. Usage remains subject
+to the availability and limits of the plan associated with each CLI.
 
 ## Run from source
 
@@ -128,11 +149,12 @@ The results are `dist/macos/PlaylistAI.app` and
 `dist/macos/PlaylistAI-macOS.zip`. Public distribution without Gatekeeper
 warnings requires an Apple Developer ID certificate and notarization.
 
-## Default models
+## Models and access modes
 
-Each provider starts with a balanced recommended model: Claude Sonnet 5,
-GPT-5.6 Terra, or DeepSeek V4 Pro. The configuration screen also provides
-models optimized for maximum quality or lower cost and latency.
+Local subscription mode defaults to each CLI's automatic model selection and
+also allows a compatible family to be selected explicitly. API mode keeps each
+provider's model catalog. The settings page filters providers by access mode and
+checks that the selected CLI session or API key is available.
 
 ## Troubleshooting
 
@@ -142,6 +164,8 @@ models optimized for maximum quality or lower cost and latency.
   rate-limited your application.
 - **Error 403 while editing:** log out, reconnect, and accept the playlist
   modification permissions.
+- **Claude Code or Codex is unavailable:** run `claude auth status` or
+  `codex login status` in a terminal, authenticate, and restart PlaylistAI.
 
 ## Security
 
