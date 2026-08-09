@@ -8,8 +8,10 @@ from spotipy.exceptions import SpotifyException
 from spotipy.cache_handler import MemoryCacheHandler
 import spotipy
 from runtime_paths import env_file_path
+from local_ai import LocalAIError, call_local_ai, cli_status
 
 app = Flask(__name__)
+APP_VERSION = "1.0.0"
 app.secret_key = os.urandom(24)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
@@ -84,6 +86,8 @@ def normalize_loopback_host():
 PROVIDERS = {
     "anthropic": {
         "name": "Anthropic",
+        "access": "api",
+        "detail": "Usa ANTHROPIC_API_KEY",
         "models": [
             {"id": "claude-sonnet-5",    "label": "Claude Sonnet 5 (balanceado · recomendado)"},
             {"id": "claude-opus-4-8",    "label": "Claude Opus 4.8 (máxima calidad)"},
@@ -92,6 +96,8 @@ PROVIDERS = {
     },
     "openai": {
         "name": "OpenAI",
+        "access": "api",
+        "detail": "Usa OPENAI_API_KEY",
         "models": [
             {"id": "gpt-5.6-terra", "label": "GPT-5.6 Terra (balanceado · recomendado)"},
             {"id": "gpt-5.6-sol",   "label": "GPT-5.6 Sol (máxima calidad)"},
@@ -100,6 +106,8 @@ PROVIDERS = {
     },
     "nvidia": {
         "name": "NVIDIA NIM",
+        "access": "api",
+        "detail": "Usa NVIDIA_API_KEY",
         "models": [
             {"id": "deepseek-ai/deepseek-v4-pro",       "label": "DeepSeek V4 Pro (recomendado · calidad)"},
             {"id": "qwen/qwen3-next-80b-a3b-instruct",  "label": "Qwen3-Next 80B (calidad + rápido)"},
@@ -108,7 +116,29 @@ PROVIDERS = {
             {"id": "nvidia/nemotron-3-ultra-550b-a55b", "label": "Nemotron 3 Ultra 550B (máx calidad, lento)"},
             {"id": "qwen/qwen3.5-397b-a17b",            "label": "Qwen 3.5 397B (VLM)"},
         ]
-    }
+    },
+    "claude_code": {
+        "name": "Claude Code",
+        "access": "subscription",
+        "detail": "Usa tu sesión local de Claude Code",
+        "models": [
+            {"id": "default", "label": "Automático (recomendado · configuración de Claude Code)"},
+            {"id": "sonnet", "label": "Sonnet (balanceado)"},
+            {"id": "opus", "label": "Opus (máxima calidad)"},
+            {"id": "haiku", "label": "Haiku (rápido)"},
+        ],
+    },
+    "codex": {
+        "name": "Codex",
+        "access": "subscription",
+        "detail": "Usa tu sesión local de ChatGPT/Codex",
+        "models": [
+            {"id": "default", "label": "Automático (recomendado · configuración de Codex)"},
+            {"id": "gpt-5.6-terra", "label": "GPT-5.6 Terra (balanceado)"},
+            {"id": "gpt-5.6-sol", "label": "GPT-5.6 Sol (máxima calidad)"},
+            {"id": "gpt-5.6-luna", "label": "GPT-5.6 Luna (rápido)"},
+        ],
+    },
 }
 # ───────────────────────────────────────────────────────────────
 
@@ -201,15 +231,25 @@ def get_playlist_for_analysis(sp, playlist_id):
         offset += limit
     return pl, items
 
-def ai_config_error(provider):
+def ai_config_error(provider, model=None):
+    if provider not in PROVIDERS:
+        return f"Proveedor de IA no soportado: {provider}"
+    valid_models = {item["id"] for item in PROVIDERS[provider]["models"]}
+    if model and model not in valid_models:
+        return f"Modelo de IA no soportado para {PROVIDERS[provider]['name']}: {model}"
     if provider == "anthropic" and not ANTHROPIC_KEY:
         return "Falta ANTHROPIC_API_KEY en .env o selecciona otro proveedor en IA Config."
     if provider == "openai" and not OPENAI_KEY:
         return "Falta OPENAI_API_KEY en .env o selecciona otro proveedor en IA Config."
     if provider == "nvidia" and not NVIDIA_KEY:
         return "Falta NVIDIA_API_KEY en .env o selecciona otro proveedor en IA Config."
-    if provider not in PROVIDERS:
-        return f"Proveedor de IA no soportado: {provider}"
+    if provider in {"claude_code", "codex"}:
+        try:
+            status = cli_status(provider)
+        except LocalAIError as exc:
+            return str(exc)
+        if not status["available"]:
+            return str(status["detail"])
     return None
 
 def normalize_search_text(value):
@@ -441,7 +481,19 @@ def call_ai(prompt, provider="anthropic", model=None, max_output_tokens=5000, ou
     """Llama al proveedor de IA seleccionado y devuelve el texto de respuesta."""
     max_output_tokens = max(512, min(int(max_output_tokens), 16000))
 
-    # ── Anthropic ──
+    # ── Suscripciones locales ──
+    if provider in {"claude_code", "codex"}:
+        try:
+            return call_local_ai(
+                prompt,
+                provider=provider,
+                model=model,
+                output_schema=output_schema,
+            )
+        except LocalAIError as exc:
+            return f"Error {PROVIDERS[provider]['name']}: {exc}"
+
+    # ── Anthropic API ──
     if provider == "anthropic":
         model = model or "claude-sonnet-5"
         payload = {
@@ -549,7 +601,12 @@ def call_ai(prompt, provider="anthropic", model=None, max_output_tokens=5000, ou
 @app.route("/")
 def index():
     logged_in = "token_info" in session
-    return render_template("index.html", logged_in=logged_in, auth_error=request.args.get("auth_error"))
+    return render_template(
+        "index.html",
+        logged_in=logged_in,
+        auth_error=request.args.get("auth_error"),
+        app_version=APP_VERSION,
+    )
 
 @app.route("/login")
 def login():
@@ -674,7 +731,7 @@ Responde SOLO en este formato JSON (sin markdown, sin texto extra):
 
     provider = data.get("provider", "anthropic")
     model    = data.get("model", None)
-    ai_error = ai_config_error(provider)
+    ai_error = ai_config_error(provider, model)
     if ai_error:
         return jsonify({"error": ai_error}), 400
     ai_raw = call_ai(prompt, provider=provider, model=model)
@@ -962,7 +1019,7 @@ def api_create():
     deadline = time.monotonic() + 220
     provider = data.get("provider", "anthropic")
     model    = data.get("model", None)
-    ai_error = ai_config_error(provider)
+    ai_error = ai_config_error(provider, model)
     if ai_error:
         return jsonify({"error": ai_error}), 400
 
@@ -1036,7 +1093,7 @@ def api_add_to_playlist():
     deadline = time.monotonic() + 220
     provider = data.get("provider", "anthropic")
     model    = data.get("model", None)
-    ai_error = ai_config_error(provider)
+    ai_error = ai_config_error(provider, model)
     if ai_error:
         return jsonify({"error": ai_error}), 400
 
@@ -1207,12 +1264,30 @@ Devuelve SOLO JSON:
 def api_providers():
     available = {}
     for key, prov in PROVIDERS.items():
+        if prov["access"] == "subscription":
+            try:
+                status = cli_status(key)
+            except LocalAIError as exc:
+                status = {
+                    "installed": True,
+                    "authenticated": False,
+                    "available": False,
+                    "detail": str(exc),
+                }
+            available[key] = {**prov, **status}
+            continue
         has_key = bool(
             (key == "anthropic" and ANTHROPIC_KEY) or
             (key == "openai"    and OPENAI_KEY)    or
             (key == "nvidia"    and NVIDIA_KEY)
         )
-        available[key] = {**prov, "available": has_key}
+        available[key] = {
+            **prov,
+            "available": has_key,
+            "installed": True,
+            "authenticated": has_key,
+            "detail": prov["detail"] if has_key else "Falta la API key en .env",
+        }
     return jsonify(available)
 
 if __name__ == "__main__":

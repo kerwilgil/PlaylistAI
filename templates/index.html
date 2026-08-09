@@ -255,6 +255,53 @@
   }
   .card + .card { margin-top: 16px; }
 
+  /* ── AI SETTINGS ── */
+  .access-mode-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+  }
+  .access-mode-option {
+    min-height: 104px; padding: 16px; text-align: left;
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    background: var(--bg-raised); color: var(--text-primary);
+    font-family: var(--font); cursor: pointer; transition: all 150ms ease;
+  }
+  .access-mode-option:hover { border-color: var(--border-strong); }
+  .access-mode-option.active {
+    border-color: var(--green); background: var(--green-subtle);
+    box-shadow: 0 0 0 1px var(--green-subtle);
+  }
+  .access-mode-option:focus-visible,
+  .provider-option:focus-within { outline: 2px solid var(--green); outline-offset: 2px; }
+  .access-mode-title { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 650; }
+  .access-mode-copy { display: block; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+  .provider-list { display: flex; flex-direction: column; gap: 8px; }
+  .provider-option {
+    display: flex; align-items: center; gap: 12px; padding: 13px 14px;
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    background: var(--bg-raised); transition: all 150ms ease;
+  }
+  label.provider-option { cursor: pointer; }
+  label.provider-option:hover { border-color: var(--border-strong); }
+  .provider-option.active { border-color: var(--green); background: var(--green-subtle); }
+  .provider-option.unavailable { opacity: 0.68; }
+  .provider-option input { accent-color: var(--green); flex-shrink: 0; }
+  .provider-main { min-width: 0; }
+  .provider-name { display: block; font-size: 14px; font-weight: 600; }
+  .provider-detail {
+    display: block; margin-top: 3px; color: var(--text-muted);
+    font-size: 12px; line-height: 1.4;
+  }
+  .provider-status {
+    margin-left: auto; padding-left: 12px; color: var(--text-muted);
+    font-size: 12px; white-space: nowrap;
+  }
+  .provider-status.ready { color: var(--green); }
+  .settings-note {
+    margin-top: 12px; padding: 12px 14px; border-radius: var(--radius-md);
+    background: var(--neutral-subtle); color: var(--text-secondary);
+    font-size: 12px; line-height: 1.55;
+  }
+
   /* ── TRACK LIST ── */
   .track-list { display: flex; flex-direction: column; gap: 4px; }
   .track-item {
@@ -403,6 +450,9 @@
     .tabbar-item svg { width: 20px; height: 20px; flex-shrink: 0; }
     .tabbar-item.active { color: var(--green); }
     .theme-switcher-login { top: 12px; right: 12px; }
+    .access-mode-grid { grid-template-columns: 1fr; }
+    .provider-option { align-items: flex-start; }
+    .provider-status { white-space: normal; text-align: right; }
   }
 </style>
 </head>
@@ -680,7 +730,7 @@
     <div class="page" id="page-settings">
       <div class="page-header">
         <div class="page-title">Configuración de IA</div>
-        <div class="page-subtitle">Elige el proveedor y modelo que se usará para analizar y crear playlists.</div>
+        <div class="page-subtitle">Elige cómo acceder a la IA y qué modelo se usará para analizar y crear playlists.</div>
       </div>
       <div class="card" style="margin-bottom:16px">
         <div class="section-title">Apariencia</div>
@@ -700,13 +750,28 @@
           </button>
         </div>
       </div>
+      <div class="card" id="access-mode-card">
+        <div class="section-title" style="margin-bottom:6px">Modo de acceso</div>
+        <div class="page-subtitle" style="margin-bottom:16px">Puedes usar una suscripción local ya iniciada o tus propias API keys.</div>
+        <div class="access-mode-grid" role="group" aria-label="Modo de acceso a la IA">
+          <button class="access-mode-option" type="button" data-access-mode="subscription" onclick="setAccessMode('subscription')" aria-pressed="false">
+            <span class="access-mode-title">Suscripción local</span>
+            <span class="access-mode-copy">Usa tu sesión de Claude Code o Codex. No requiere guardar una API key en PlaylistAI.</span>
+          </button>
+          <button class="access-mode-option" type="button" data-access-mode="api" onclick="setAccessMode('api')" aria-pressed="false">
+            <span class="access-mode-title">API</span>
+            <span class="access-mode-copy">Usa Anthropic, OpenAI o NVIDIA con las claves configuradas en el archivo .env.</span>
+          </button>
+        </div>
+        <div class="settings-note" id="access-mode-note"></div>
+      </div>
       <div class="card" id="providers-card">
         <div style="color:var(--text-muted);font-size:14px;padding:24px;text-align:center">
           <div class="spinner"></div>
           <div style="margin-top:12px">Cargando proveedores...</div>
         </div>
       </div>
-      <div style="margin-top:16px" id="model-select-wrap" style="display:none">
+      <div id="model-select-wrap" style="display:none;margin-top:16px">
         <div class="card">
           <div class="input-group" style="margin-bottom:0">
             <label class="input-label" for="model-select">Modelo</label>
@@ -715,12 +780,13 @@
         </div>
       </div>
       <div style="margin-top:20px">
-        <button class="btn btn-green" onclick="saveProviderSettings()">Guardar configuración</button>
+        <button class="btn btn-green" id="save-ai-settings" onclick="saveProviderSettings()">Guardar configuración</button>
       </div>
       <div id="settings-saved" style="display:none;margin-top:16px" class="status-bar">
         <div class="status-dot success"></div>
         <span>Configuración guardada. Se usará en el próximo análisis.</span>
       </div>
+      <div class="credit" style="margin-top:20px">PlaylistAI {{ app_version }}</div>
     </div>
 
     <div class="credit credit-main">
@@ -1104,51 +1170,91 @@ function resetAdd() {
 }
 
 // ── PROVIDER SETTINGS ──
-let aiConfig = { provider: localStorage.getItem('ai_provider') || 'anthropic', model: localStorage.getItem('ai_model') || null };
+const storedProvider = localStorage.getItem('ai_provider');
+const subscriptionProviders = new Set(['claude_code', 'codex']);
+const inferredAccessMode = subscriptionProviders.has(storedProvider) ? 'subscription' : 'api';
+let aiConfig = {
+  access: localStorage.getItem('ai_access') || inferredAccessMode,
+  provider: storedProvider,
+  model: localStorage.getItem('ai_model') || null
+};
 let providersData = {};
 
 async function loadProviders() {
   try {
     const r = await fetch('/api/providers');
+    if (!r.ok) throw new Error('No se pudo consultar los proveedores');
     providersData = await r.json();
     renderProviders();
-  } catch(e) {}
+  } catch(e) {
+    document.getElementById('providers-card').innerHTML =
+      '<div class="empty">No se pudo cargar la configuración de IA. Reinicia PlaylistAI e inténtalo otra vez.</div>';
+  }
+}
+
+function renderAccessModes() {
+  document.querySelectorAll('[data-access-mode]').forEach(button => {
+    const active = button.dataset.accessMode === aiConfig.access;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  document.getElementById('access-mode-note').textContent = aiConfig.access === 'subscription'
+    ? 'PlaylistAI ejecuta el CLI instalado de forma local y no conserva sesiones. Debes iniciar sesión previamente en Claude Code o Codex.'
+    : 'Las API keys permanecen en tu archivo .env local y nunca se envían al navegador.';
+}
+
+function setAccessMode(access) {
+  if (!['subscription', 'api'].includes(access) || aiConfig.access === access) return;
+  aiConfig.access = access;
+  aiConfig.provider = null;
+  aiConfig.model = null;
+  renderProviders();
 }
 
 function renderProviders() {
+  renderAccessModes();
   const card = document.getElementById('providers-card');
-  const available = Object.entries(providersData).filter(([,p]) => p.available);
-  const unavailable = Object.entries(providersData).filter(([,p]) => !p.available);
+  const modeProviders = Object.entries(providersData).filter(([, p]) => p.access === aiConfig.access);
+  const available = modeProviders.filter(([, p]) => p.available);
 
-  if (available.length === 0) {
-    card.innerHTML = '<div class="empty">No hay ninguna API key configurada en start.sh</div>';
+  if (modeProviders.length === 0) {
+    card.innerHTML = '<div class="empty">No hay proveedores disponibles para este modo de acceso.</div>';
+    document.getElementById('model-select-wrap').style.display = 'none';
+    document.getElementById('save-ai-settings').disabled = true;
     return;
   }
 
-  if (!providersData[aiConfig.provider]?.available) {
-    aiConfig.provider = available[0][0];
+  const currentProvider = providersData[aiConfig.provider];
+  if (!modeProviders.some(([key]) => key === aiConfig.provider) ||
+      (!currentProvider?.available && available.length > 0)) {
+    aiConfig.provider = (available[0] || modeProviders[0])[0];
     aiConfig.model = null;
-    localStorage.setItem('ai_provider', aiConfig.provider);
-    localStorage.removeItem('ai_model');
   }
 
   card.innerHTML = `
     <div class="section-title" style="margin-bottom:16px">Proveedor</div>
-    <div style="display:flex;flex-direction:column;gap:8px">
-      ${available.map(([key, p]) => `
-        <label style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--radius-md);border:1px solid ${aiConfig.provider===key ? 'var(--green)' : 'var(--border)'};background:${aiConfig.provider===key ? 'var(--green-subtle)' : 'var(--bg-raised)'};cursor:pointer;transition:all 150ms ease">
-          <input type="radio" name="provider" value="${key}" ${aiConfig.provider===key ? 'checked' : ''} onchange="onProviderChange('${key}')" style="accent-color:var(--green)">
-          <span style="font-size:14px;font-weight:500">${p.name}</span>
-          <span style="font-size:12px;color:var(--green);margin-left:auto">✓ Activo</span>
-        </label>`).join('')}
-      ${unavailable.map(([key, p]) => `
-        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--radius-md);border:1px solid var(--border);opacity:0.4">
+    <div class="provider-list">
+      ${modeProviders.map(([key, p]) => p.available ? `
+        <label class="provider-option ${aiConfig.provider === key ? 'active' : ''}">
+          <input type="radio" name="provider" value="${key}" ${aiConfig.provider === key ? 'checked' : ''} onchange="onProviderChange('${key}')">
+          <span class="provider-main">
+            <span class="provider-name">${escapeHtml(p.name)}</span>
+            <span class="provider-detail">${escapeHtml(p.detail || '')}</span>
+          </span>
+          <span class="provider-status ready">${aiConfig.access === 'subscription' ? '✓ Sesión activa' : '✓ API lista'}</span>
+        </label>` : `
+        <div class="provider-option unavailable">
           <input type="radio" name="provider" value="${key}" disabled>
-          <span style="font-size:14px;font-weight:500">${p.name}</span>
-          <span style="font-size:12px;color:var(--text-muted);margin-left:auto">Sin API key</span>
+          <span class="provider-main">
+            <span class="provider-name">${escapeHtml(p.name)}</span>
+            <span class="provider-detail">${escapeHtml(p.detail || '')}</span>
+          </span>
+          <span class="provider-status">No disponible</span>
         </div>`).join('')}
     </div>`;
 
+  const selectedAvailable = Boolean(providersData[aiConfig.provider]?.available);
+  document.getElementById('save-ai-settings').disabled = !selectedAvailable;
   updateModelSelect(aiConfig.provider);
 }
 
@@ -1178,7 +1284,12 @@ function updateModelSelect(provider) {
 }
 
 function saveProviderSettings() {
+  if (!providersData[aiConfig.provider]?.available) {
+    toast('Primero instala e inicia sesión en el proveedor seleccionado.', 'error');
+    return;
+  }
   aiConfig.model = document.getElementById('model-select').value;
+  localStorage.setItem('ai_access', aiConfig.access);
   localStorage.setItem('ai_provider', aiConfig.provider);
   localStorage.setItem('ai_model', aiConfig.model);
   document.getElementById('settings-saved').style.display = 'flex';

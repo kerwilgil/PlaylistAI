@@ -3,7 +3,31 @@
 Notas operativas del proyecto que no están en el README. Mantener actualizado con cada cambio relevante de seguridad o arquitectura.
 
 ## Qué es
-Flask monolítico de un solo archivo (`app.py`) + frontend vanilla HTML/CSS/JS en `templates/index.html`. Curador de playlists de Spotify con IA (Anthropic/OpenAI/NVIDIA NIM). Uso personal, corre en `127.0.0.1:5000`.
+Flask monolítico (`app.py`) + frontend vanilla HTML/CSS/JS en `templates/index.html`. Curador de playlists de Spotify con IA mediante API (Anthropic/OpenAI/NVIDIA NIM) o suscripción local (Claude Code/Codex). Uso personal, corre en `127.0.0.1:5000`.
+
+## Suscripciones locales de IA (1.0.0)
+
+`local_ai.py` integra Claude Code y Codex como procesos no interactivos. La
+pantalla de Configuración separa primero el modo `subscription`/`api`, después
+filtra los proveedores y modelos. La preferencia se guarda en `localStorage`
+como `ai_access`, `ai_provider` y `ai_model`.
+
+- `/api/providers` comprueba instalación y autenticación con
+  `claude auth status` o `codex login status` sin devolver identidad, correo u
+  otros datos de cuenta al navegador.
+- Las variables `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY` y
+  `CODEX_API_KEY` se eliminan del entorno hijo cuando se usa una suscripción.
+- Claude Code se ejecuta con salida JSON, sin herramientas, sin comandos slash,
+  sin persistencia de sesión y en modo seguro/no interactivo.
+- Codex se ejecuta de forma efímera, sin reglas del repositorio, en sandbox de
+  solo lectura y dentro de un directorio temporal vacío.
+- La detección amplía `PATH` con ubicaciones habituales de npm, Homebrew, nvm,
+  fnm, asdf y `~/.local/bin`; es necesaria para una `.app` iniciada desde Finder.
+- Los procesos tienen timeout controlado y sus errores se convierten en mensajes
+  de aplicación. Nunca se registra el prompt ni la respuesta completa.
+
+La suscripción solo reemplaza la credencial del proveedor de IA; Spotify todavía
+requiere `SPOTIFY_CLIENT_ID` y `SPOTIFY_CLIENT_SECRET` en `.env`.
 
 ## Builds de escritorio
 
