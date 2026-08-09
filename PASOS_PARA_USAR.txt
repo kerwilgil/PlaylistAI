@@ -19,18 +19,23 @@ PASOS PARA USAR PLAYLISTAI
    SPOTIFY_CLIENT_SECRET=tu_client_secret
    SPOTIFY_REDIRECT_URI=http://127.0.0.1:5000/callback
 
-   Tambien agrega al menos una key de IA para analizar o crear playlists:
+   Para usar IA mediante API, agrega al menos una key:
 
    ANTHROPIC_API_KEY=tu_key
    OPENAI_API_KEY=tu_key
    NVIDIA_API_KEY=tu_key
+
+   Alternativa sin API key de IA: instala e inicia sesion en Claude Code o
+   Codex (`claude` o `codex login`). Las credenciales de Spotify siguen siendo
+   necesarias.
 
 5. Haz doble clic en:
 
    Windows: start.cmd
    macOS:   start.command
 
-   Se abrira una ventana de terminal. Dejala abierta mientras uses la app.
+   Si usas PlaylistAI.exe, el servidor queda en segundo plano sin ventana de
+   terminal. Los scripts de desarrollo mantienen su terminal abierta.
 
 6. Abre la app en el navegador:
 
@@ -45,10 +50,11 @@ PASOS PARA USAR PLAYLISTAI
    "sustituto (mismo artista)" son temas reales del artista pedido (la IA habia
    inventado el titulo original).
 
-9. En "IA Config" puedes elegir proveedor y modelo. Por defecto usa el de mayor
-   calidad; cambia a uno mas rapido (ej. Claude Sonnet 4.6) si lo prefieres.
+9. En "IA Config" elige primero "Suscripcion local" o "API"; despues selecciona
+   proveedor y modelo. La opcion "Automatico" de Claude Code/Codex respeta la
+   configuracion de la propia CLI.
 
-10. Para cerrar la app, vuelve a la ventana de PowerShell y presiona:
+10. Si arrancaste desde un script, cierra la app desde PowerShell con:
 
    CTRL + C
 
@@ -57,7 +63,8 @@ NOTAS
 - No abras templates/index.html para usar la app. Ese archivo es una plantilla interna.
 - PlaylistAI.lnk puede funcionar en tu PC, pero no es portable para Git porque guarda
   una ruta absoluta. Para cualquier maquina usa start.cmd o start.command.
-- No cierres la ventana de terminal mientras estes usando PlaylistAI.
+- Si usas un script, no cierres su terminal mientras estes usando PlaylistAI.
+  PlaylistAI.exe se ejecuta silenciosamente en segundo plano.
 - Si Spotify muestra error de redirect URI, revisa que en Spotify y en .env diga
   exactamente: http://127.0.0.1:5000/callback
 - Si ves "Spotify limito las peticiones (429)", hiciste muchas peticiones seguidas
