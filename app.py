@@ -1,4 +1,4 @@
-﻿import os, re, json, secrets, time, unicodedata, requests
+﻿import math, os, re, json, secrets, time, unicodedata, requests
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlencode, urlparse
 from flask import Flask, redirect, request, session, jsonify, render_template, Response, stream_with_context
@@ -8,10 +8,10 @@ from spotipy.exceptions import SpotifyException
 from spotipy.cache_handler import MemoryCacheHandler
 import spotipy
 from runtime_paths import env_file_path
-from local_ai import LocalAIError, call_local_ai, cli_status
+from local_ai import LOCAL_AI_TIMEOUT_SECONDS, LocalAIError, call_local_ai, cli_status
 
 app = Flask(__name__)
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 app.secret_key = os.urandom(24)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
@@ -75,6 +75,24 @@ SCOPES        = "playlist-modify-public playlist-modify-private playlist-read-pr
 ANTHROPIC_KEY = config_value("ANTHROPIC_API_KEY")
 OPENAI_KEY    = config_value("OPENAI_API_KEY")
 NVIDIA_KEY    = config_value("NVIDIA_API_KEY")
+
+def _job_timeout_seconds():
+    """Presupuesto total (segundos) para /api/create y /api/add_to_playlist,
+    incluyendo todas las rondas de IA + resolución en Spotify. Configurable via
+    PLAYLISTAI_JOB_TIMEOUT_SECONDS, con clamps para evitar valores absurdos.
+    Ver CONTEXT.md ("Resolución incremental por rondas") para la relación con
+    LOCAL_AI_TIMEOUT_SECONDS (local_ai.py)."""
+    raw = os.environ.get("PLAYLISTAI_JOB_TIMEOUT_SECONDS", "").strip()
+    try:
+        value = int(raw) if raw else 360
+    except ValueError:
+        value = 360
+    return max(120, min(value, 600))
+
+JOB_TIMEOUT_SECONDS = _job_timeout_seconds()
+# Margen extra para que el AbortController del frontend nunca dispare antes de
+# que el backend haya tenido oportunidad de cerrar limpio con datos parciales.
+JOB_TIMEOUT_FRONTEND_MARGIN_SECONDS = 30
 
 @app.before_request
 def normalize_loopback_host():
@@ -282,43 +300,87 @@ def candidate_label(track):
     artist = track["artists"][0]["name"] if track.get("artists") else "Artista desconocido"
     return f"{artist} – {track['name']}"
 
-def prompt_needs_instrumental_electronic_filter(mood):
+def detect_hard_constraints(mood):
+    """Restricciones DURAS detectadas en el mood/prompt del usuario (ver
+    CONTEXT.md, "Restricciones duras vs preferencias suaves"). Deben cumplirse
+    literalmente en TODAS las rondas de `stream_resolve_from_prompt` y en el
+    fallback de artista, sin excepción — a diferencia de las preferencias
+    suaves (relajante, para trabajar, concentración, enfoque, etc.), que NO
+    activan ningún filtro de rechazo y solo refuerzan el tono del prompt a la
+    IA (ver `_round_prompt`).
+
+    FIX (bug real, ver encargo): antes, "instrumental"/"sin voces" solo se
+    activaba si ADEMÁS el mood mencionaba un género electrónico (techno,
+    house, deep...). Un mood como "Lo-Fi / Chillhop instrumental... sin
+    voces..." no calificaba y el filtro nunca se aplicaba. Ahora la detección
+    de "instrumental" depende únicamente de sus propios términos.
+    `electronic_context` se conserva solo como señal para decidir qué
+    vocabulario ADICIONAL de rechazo aplicar en `track_allowed_by_prompt`
+    (géneros no-electrónicos, acoustic/unplugged/radio edit) — nunca como
+    condición para activar la restricción dura."""
     text = normalize_search_text(mood)
-    wants_instrumental = any(term in text for term in [
+    instrumental = any(term in text for term in [
         "instrumental", "sin voces", "sin voz", "no vocal", "without vocals",
-        "programar", "enfoque", "concentracion", "focus", "trabajo", "estudiar"
+    ])
+    no_remix = any(term in text for term in [
+        "sin remix", "sin remixes", "no remix", "no remixes",
+    ])
+    no_live = any(term in text for term in [
+        "sin vivo", "sin en vivo", "no live", "sin live", "no en vivo",
     ])
     electronic_context = any(term in text for term in [
         "techno", "house", "electronic", "electronica", "electronico",
         "deep", "melodic", "minimal", "progressive", "microhouse"
     ])
-    return wants_instrumental and electronic_context
-
-def artist_genres(sp, artist_id):
-    if not artist_id:
-        return []
-    if artist_id not in SPOTIFY_ARTIST_CACHE:
-        if len(SPOTIFY_ARTIST_CACHE) >= CACHE_MAX_ENTRIES:
-            SPOTIFY_ARTIST_CACHE.clear()
-        SPOTIFY_ARTIST_CACHE[artist_id] = sp.artist(artist_id).get("genres", [])
-    return SPOTIFY_ARTIST_CACHE[artist_id]
+    return {
+        "instrumental": instrumental,
+        "no_remix": no_remix,
+        "no_live": no_live,
+        "electronic_context": electronic_context,
+        "any": instrumental or no_remix or no_live,
+    }
 
 def track_allowed_by_prompt(sp, track, mood):
-    if not prompt_needs_instrumental_electronic_filter(mood):
+    """Rechaza candidatos que violen una restricción dura detectada en `mood`
+    (ver `detect_hard_constraints`). LIMITACIÓN CONOCIDA (ver CONTEXT.md): la
+    Search API de Spotify no expone ningún atributo confiable de
+    "instrumental"/"vocal" — esto es una heurística sobre el TEXTO del
+    título/álbum del candidato (`candidate_label`), no una detección real de
+    audio. No se agregan llamadas nuevas a la API de Spotify."""
+    constraints = detect_hard_constraints(mood)
+    if not constraints["any"]:
         return True
 
     label = normalize_search_text(candidate_label(track))
-    rejected_terms = [
-        "feat", "featuring", "ft", "vocal", "unplugged", "acoustic", "radio edit",
-        "plena", "salsa", "bachata", "merengue", "reggaeton", "cumbia", "vallenato",
-        "latin pop", "rock", "pop", "rap", "hip hop", "trap", "corridos", "banda",
-        "mango", "ron",
-    ]
-    # Solo filtramos por el texto del track (sin llamar a sp.artist por género,
-    # que disparaba muchísimas peticiones extra a Spotify y causaba rate-limit).
+    padded_label = f" {label} "
+
+    rejected_terms = []
+    if constraints["instrumental"]:
+        # Señales de voz en el título/etiqueta — únicas disponibles sin
+        # inventar capacidades que Spotify no tiene.
+        rejected_terms += [
+            "feat", "featuring", "ft", "vocal", "vocals", "vocal mix",
+            "vocal version", "with vocals",
+        ]
+        if constraints["electronic_context"]:
+            # Vocabulario adicional del caso original (techno/house
+            # instrumental): covers acústicas/unplugged/radio edit y géneros
+            # no-electrónicos que no deberían colarse en ESE pedido puntual.
+            # No se aplica a moods sin contexto electrónico (ej. Lo-Fi) para
+            # no sobre-filtrar géneros que sí pueden ser válidos ahí.
+            rejected_terms += [
+                "unplugged", "acoustic", "radio edit",
+                "plena", "salsa", "bachata", "merengue", "reggaeton", "cumbia",
+                "vallenato", "latin pop", "rock", "pop", "rap", "hip hop",
+                "trap", "corridos", "banda", "mango", "ron",
+            ]
+    if constraints["no_remix"]:
+        rejected_terms += ["remix", "rmx", "mashup"]
+    if constraints["no_live"]:
+        rejected_terms += ["live", "vivo"]
+
     # Coincidencia por palabra completa, no substring: "rock" no debe rechazar
     # "Rocket Man" ni "ron" rechazar "electronic".
-    padded_label = f" {label} "
     if any(f" {term} " in padded_label for term in rejected_terms):
         return False
     return True
@@ -606,6 +668,7 @@ def index():
         logged_in=logged_in,
         auth_error=request.args.get("auth_error"),
         app_version=APP_VERSION,
+        job_timeout_ms=(JOB_TIMEOUT_SECONDS + JOB_TIMEOUT_FRONTEND_MARGIN_SECONDS) * 1000,
     )
 
 @app.route("/login")
@@ -819,11 +882,131 @@ def _event(obj):
     return json.dumps(obj, ensure_ascii=False) + "\n"
 
 
-def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider, model, deadline, preselected_ids, result):
-    """Generador que pide canciones a la IA y las resuelve en Spotify, emitiendo
-    eventos NDJSON de status/progress. Llena `result` (dict con listas). En caso de
-    error terminal escribe result["fatal"]["error"] y termina; el llamador decide
-    qué hacer. `preselected_ids` son IDs que NO se deben volver a agregar."""
+BATCH_MIN_SIZE = 6   # por debajo de esto no vale la pena gastar una llamada a IA
+BATCH_MAX_SIZE = 18  # tope de candidatos por ronda (lotes chicos = IA mas rapida/confiable)
+NO_PROGRESS_ROUND_LIMIT = 2  # rondas seguidas sin sumar ninguna cancion -> se corta
+
+
+def _round_batch_size(needed):
+    """Oversampling dinamico: cuantos candidatos pedirle a la IA para cubrir
+    `needed` canciones que aun faltan. ceil(needed*1.4) como base, con piso
+    (que valga la pena la llamada) y techo (lotes chicos, rapidos y faciles de
+    parsear) — nunca crece sin control ronda tras ronda porque siempre se
+    recalcula sobre `needed`, no sobre un acumulado."""
+    if needed <= 0:
+        return 0
+    target = math.ceil(needed * 1.4)
+    return max(min(target, BATCH_MAX_SIZE), BATCH_MIN_SIZE)
+
+
+def _max_rounds_for_count(count):
+    """Tope estricto de rondas de IA para un pedido de `count` canciones. Crece
+    con el tamaño del pedido (piden mas -> se permiten mas rondas) pero siempre
+    con techo fijo para no loopear indefinidamente."""
+    return max(4, min(12, math.ceil(count / 5) + 2))
+
+
+def _round_time_budget_seconds(provider):
+    """Estimacion (con margen) de cuanto puede tardar UNA ronda completa (llamada
+    a IA + resolucion en Spotify), usada para decidir si arrancar una ronda mas
+    o cortar por deadline ANTES de empezarla. Se basa en el timeout real de la
+    llamada a IA, no en un numero inventado: LOCAL_AI_TIMEOUT_SECONDS para
+    suscripciones locales (Claude Code/Codex, procesos mas lentos) o el timeout
+    de 60s de `requests` para las APIs (Anthropic/OpenAI/NVIDIA) en `call_ai()`."""
+    base = LOCAL_AI_TIMEOUT_SECONDS if provider in {"claude_code", "codex"} else 60
+    return base + 15  # margen para la resolucion en Spotify (paralela, normalmente rapida)
+
+
+def _normalize_track_key(name, artist):
+    name_n = normalize_search_text(name)
+    artist_n = normalize_search_text(artist)
+    if not name_n and not artist_n:
+        return None
+    return f"{artist_n}|{name_n}"
+
+
+def _round_prompt(name, mood, count, batch_size, round_index, accepted, attempted, constraints=None):
+    """Prompt unico para cada ronda del loop incremental. Reemplaza a los
+    antiguos _create_prompt/_retry_prompt/_repair_prompt: round_index == 0 pide
+    la tanda inicial (con descripcion), las siguientes piden solo reemplazos y
+    reciben explicitamente todo lo ya aceptado/intentado para no repetirlo.
+
+    `constraints` (dict de `detect_hard_constraints`, calculado UNA VEZ al
+    inicio del job en `stream_resolve_from_prompt` — el mood no cambia entre
+    rondas) refuerza literalmente las restricciones duras detectadas en TODAS
+    las rondas, no solo en la ronda 0, para que la IA no las "olvide" al pedir
+    reemplazos."""
+    if constraints is None:
+        constraints = detect_hard_constraints(mood)
+    context = (
+        f'Título: "{name}"\n'
+        f'Descripción/Mood: "{mood}"\n'
+        f"Cantidad final deseada: {count}"
+    )
+
+    if round_index == 0:
+        task = (
+            f"Genera {batch_size} canciones candidatas para que el sistema pueda "
+            f"verificar disponibilidad en Spotify y quedarse con las mejores {count}."
+        )
+        schema_hint = (
+            '{\n  "description": "Descripción corta de la playlist (1 oración)",'
+            '\n  "tracks": [\n    {"name": "Nombre exacto de la canción", "artist": "Artista exacto"}\n  ]\n}'
+        )
+    else:
+        accepted_block = json.dumps(accepted, ensure_ascii=False) if accepted else "[]"
+        attempted_block = json.dumps(attempted[-60:], ensure_ascii=False) if attempted else "[]"
+        task = (
+            "Ya se aceptaron estas canciones reales de Spotify para esta playlist "
+            f"(no las repitas):\n{accepted_block}\n\n"
+            "Estas otras sugerencias YA SE INTENTARON en rondas anteriores — no se "
+            "encontraron en Spotify, fueron rechazadas por no cumplir el prompt, o "
+            "eran duplicados. NO LAS REPITAS bajo ningún concepto, ni con el "
+            f"título/artista exacto ni con variaciones obvias:\n{attempted_block}\n\n"
+            f"Necesito {batch_size} canciones NUEVAS, reales y distintas a todo lo anterior."
+        )
+        schema_hint = '{\n  "tracks": [\n    {"name": "Nombre exacto de la canción", "artist": "Artista exacto"}\n  ]\n}'
+
+    hard_constraint_notes = []
+    if constraints.get("instrumental"):
+        hard_constraint_notes.append(
+            "- INSTRUMENTAL / SIN VOCES: ninguna canción puede tener voces, coros, "
+            "raps ni letra cantada. Rechaza cualquier candidato con voz, incluso si "
+            "encaja perfecto en género o mood."
+        )
+    if constraints.get("no_remix"):
+        hard_constraint_notes.append("- SIN REMIXES: no incluyas remixes, mashups ni versiones remixadas.")
+    if constraints.get("no_live"):
+        hard_constraint_notes.append("- SIN GRABACIONES EN VIVO: no incluyas versiones live/en vivo.")
+    hard_constraint_block = (
+        "\n\nRESTRICCIONES OBLIGATORIAS de esta playlist (detectadas en el mood original):\n"
+        + "\n".join(hard_constraint_notes)
+        if hard_constraint_notes else ""
+    )
+
+    return f"""Eres un experto DJ y curador musical. El usuario quiere crear una playlist con este concepto:
+
+{context}
+
+{task}
+Deben ser canciones reales, oficiales y disponibles en Spotify.
+Respeta literalmente restricciones del usuario como instrumental, sin voces, género, BPM, mood, época, idioma, país, energía o artistas de referencia.
+Si el usuario menciona programar, enfoque, concentración, relajante, estudiar, deep, smooth, mentalidad o manifestación, prioriza canciones hipnóticas, limpias, repetitivas y de energía baja/media; evita tracks agresivos, ruidosos, industriales, peak-time, rave, acid o demasiado intensos aunque pertenezcan al género pedido.
+Evita inventar remixes, bootlegs, edits, club mixes o títulos raros si no estás seguro de que existen oficialmente. Prefiere releases oficiales, fáciles de encontrar por búsqueda de Spotify. Varía los artistas — no repitas más de 2 canciones del mismo artista en total.
+Las restricciones obligatorias del prompt original permanecen vigentes en esta ronda. No las relajes para alcanzar la cantidad solicitada. Es preferible devolver menos canciones que violarlas.{hard_constraint_block}
+
+Responde SOLO en este formato JSON (sin markdown, sin texto extra):
+{schema_hint}"""
+
+
+def stream_resolve_from_prompt(sp, name, mood, count, provider, model, deadline, preselected_ids, result):
+    """Generador que pide canciones a la IA en rondas incrementales y las
+    resuelve en Spotify, emitiendo eventos NDJSON de status/progress. Llena
+    `result` (dict con listas) y `result["stop_reason"]` con el motivo de
+    parada ("completed", "max_rounds", "no_progress", "deadline" o "fatal").
+    En caso de error terminal escribe result["fatal"]["error"] y termina; el
+    llamador decide qué hacer. `preselected_ids` son IDs que NO se deben volver
+    a agregar (ya existen en la playlist o en esta misma corrida)."""
     track_ids = result["track_ids"]
     added = result["added"]
     resolved_tracks = result["resolved_tracks"]
@@ -833,6 +1016,23 @@ def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider,
     substitutes = result["substitutes"]
     fatal = result["fatal"]
     selected_ids = set(preselected_ids)  # incluye lo ya existente, para no duplicar
+    attempted_normalized = set()  # "artist|name" normalizado: historial completo del job
+    attempted_labels = []
+    # Restricciones duras calculadas UNA VEZ a partir del mood original del job
+    # (no se re-derivan por ronda: el mood no cambia entre rondas). Se pasan
+    # explícitamente a `_round_prompt` para reforzar la instrucción en cada
+    # ronda. `track_allowed_by_prompt` recalcula lo mismo internamente a partir
+    # de este mismo `mood` invariable (cómputo puro y barato) para no romper
+    # la firma de `find_spotify_track`/`find_artist_fallback` — mismo
+    # resultado, sin acoplar más funciones a un parámetro nuevo.
+    hard_constraints = detect_hard_constraints(mood)
+
+    def remember_attempt(label, item_name, item_artist):
+        key = _normalize_track_key(item_name, item_artist)
+        if key:
+            attempted_normalized.add(key)
+        if label not in attempted_labels:
+            attempted_labels.append(label)
 
     def resolve_items(items, mark_replacement=False):
         """Busca las sugerencias en Spotify EN PARALELO y emite progreso en orden."""
@@ -874,6 +1074,7 @@ def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider,
                     track, is_fallback, was_rejected = None, False, False
                 except Exception:
                     track, is_fallback, was_rejected = None, False, False
+                suggestion_label = f"{it.get('artist', 'Artista desconocido')} – {it.get('name', 'Canción desconocida')}"
                 if track and track["id"] not in selected_ids:
                     selected_ids.add(track["id"])
                     track_ids.append(track["id"])
@@ -888,110 +1089,136 @@ def stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider,
                         replacement_added.append(label)
                     if is_fallback:
                         substitutes.append(label)
+                    remember_attempt(label, it.get("name"), it.get("artist"))
                     yield _event({"type": "progress", "done": len(track_ids), "total": count, "label": label})
                 elif not track:
-                    suggestion_label = f"{it.get('artist', 'Artista desconocido')} – {it.get('name', 'Canción desconocida')}"
                     if was_rejected:
                         rejected.append(suggestion_label)
                     else:
                         not_found.append(suggestion_label)
+                    remember_attempt(suggestion_label, it.get("name"), it.get("artist"))
+                else:
+                    # Se encontró en Spotify pero el ID ya estaba en la playlist/en esta
+                    # corrida (dos sugerencias distintas de la IA resolvieron al mismo
+                    # track) — igual se recuerda para que la IA no lo vuelva a proponer.
+                    remember_attempt(suggestion_label, it.get("name"), it.get("artist"))
 
-    yield _event({"type": "status", "message": "La IA está eligiendo las canciones…"})
-    create_prompt = _create_prompt(name, mood, count, candidate_count)
-    token_budget = min(12000, max(6000, candidate_count * 160))
-    ai_raw = call_ai(
-        create_prompt,
-        provider=provider,
-        model=model,
-        max_output_tokens=token_budget,
-        output_schema=_playlist_output_schema(include_description=True),
-    )
-    try:
-        ai = parse_playlist_json(ai_raw)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        app.logger.warning(
-            "Invalid playlist JSON; retrying once (provider=%s, model=%s, chars=%s)",
-            provider,
-            model or "default",
-            len(ai_raw) if isinstance(ai_raw, str) else 0,
-        )
-        second_prompt = (
-            create_prompt
-            + "\n\nIMPORTANTE: El intento anterior produjo JSON incompleto o inválido. "
-              "Devuelve el objeto completo, compacto y correctamente cerrado."
-        )
+    rounds = 0
+    consecutive_no_progress = 0
+    max_rounds = _max_rounds_for_count(count)
+    round_budget = _round_time_budget_seconds(provider)
+    stop_reason = None
+
+    while len(track_ids) < count:
+        if rounds >= max_rounds:
+            stop_reason = "max_rounds"
+            break
+        if consecutive_no_progress >= NO_PROGRESS_ROUND_LIMIT:
+            stop_reason = "no_progress"
+            break
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            # Ya no queda tiempo: ni siquiera vale la pena intentar otra ronda.
+            stop_reason = "deadline"
+            break
+        if rounds > 0 and remaining < round_budget:
+            # La ronda 0 siempre se intenta al menos una vez (mejor un resultado
+            # parcial que ninguno); a partir de la 2da ronda exigimos margen
+            # suficiente para terminarla antes del deadline real.
+            stop_reason = "deadline"
+            break
+
+        needed = count - len(track_ids)
+        batch_size = _round_batch_size(needed)
+        is_first_round = rounds == 0
+        if is_first_round:
+            yield _event({"type": "status", "message": "La IA está eligiendo las canciones…"})
+        else:
+            yield _event({"type": "status", "message": f"Completando la lista ({len(track_ids)}/{count})… ronda {rounds + 1}"})
+
+        prompt = _round_prompt(name, mood, count, batch_size, rounds, added, attempted_labels, hard_constraints)
+        token_budget = min(12000, max(4000, batch_size * 220))
         ai_raw = call_ai(
-            second_prompt,
+            prompt,
             provider=provider,
             model=model,
-            max_output_tokens=min(16000, token_budget + 3000),
-            output_schema=_playlist_output_schema(include_description=True),
+            max_output_tokens=token_budget,
+            output_schema=_playlist_output_schema(include_description=is_first_round),
         )
         try:
             ai = parse_playlist_json(ai_raw)
         except (TypeError, ValueError, json.JSONDecodeError):
-            fatal["error"] = (
-                "La IA devolvió una lista incompleta o inválida después de dos intentos. "
-                f"Respuesta: {str(ai_raw)[:200]}"
+            app.logger.warning(
+                "Invalid playlist JSON; retrying once (round=%s, provider=%s, model=%s, chars=%s)",
+                rounds,
+                provider,
+                model or "default",
+                len(ai_raw) if isinstance(ai_raw, str) else 0,
             )
-            return
+            second_prompt = (
+                prompt
+                + "\n\nIMPORTANTE: El intento anterior produjo JSON incompleto o inválido. "
+                  "Devuelve el objeto completo, compacto y correctamente cerrado."
+            )
+            ai_raw = call_ai(
+                second_prompt,
+                provider=provider,
+                model=model,
+                max_output_tokens=min(16000, token_budget + 3000),
+                output_schema=_playlist_output_schema(include_description=is_first_round),
+            )
+            try:
+                ai = parse_playlist_json(ai_raw)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                if is_first_round and not track_ids:
+                    # Sin nada aceptado todavía y la ronda inicial falló dos veces:
+                    # no hay nada útil que mostrar, se corta como error fatal.
+                    fatal["error"] = (
+                        "La IA devolvió una lista incompleta o inválida después de dos intentos. "
+                        f"Respuesta: {str(ai_raw)[:200]}"
+                    )
+                    return
+                # Ya hay progreso previo (o esto no es la ronda inicial): tratar como
+                # ronda sin candidatos en vez de tirar todo — el loop de rondas decide
+                # si vale la pena seguir intentando (max_rounds / no_progress).
+                ai = {"tracks": []}
 
-    result["description"] = ai.get("description", mood)
-    yield _event({"type": "status", "message": "Verificando canciones en Spotify…"})
-    yield from resolve_items(ai.get("tracks", []))
-    if fatal:
-        return
+        if is_first_round:
+            result["description"] = ai.get("description", mood)
+            yield _event({"type": "status", "message": "Verificando canciones en Spotify…"})
 
-    # Reintento: pedir reemplazos si faltan canciones.
-    if len(track_ids) < count and time.monotonic() < deadline:
-        needed = count - len(track_ids)
-        yield _event({"type": "status", "message": f"Buscando {needed} canción(es) más con la IA…"})
-        retry_raw = call_ai(
-            _retry_prompt(name, mood, needed, added, not_found),
-            provider=provider,
-            model=model,
-            max_output_tokens=min(10000, max(4000, needed * 180)),
-            output_schema=_playlist_output_schema(include_description=False),
-        )
-        try:
-            retry_ai = parse_playlist_json(retry_raw)
-        except Exception:
-            retry_ai = {"tracks": []}
-        yield from resolve_items(retry_ai.get("tracks", []), mark_replacement=True)
-        if fatal:
-            return
+        candidates = ai.get("tracks", []) if isinstance(ai.get("tracks"), list) else []
+        # Filtrar duplicados/ya-intentados ANTES de gastar búsquedas de Spotify.
+        filtered_candidates = []
+        seen_this_round = set()
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            key = _normalize_track_key(candidate.get("name"), candidate.get("artist"))
+            if not key or key in attempted_normalized or key in seen_this_round:
+                continue
+            seen_this_round.add(key)
+            filtered_candidates.append(candidate)
 
-    # Rondas de reparación adicionales.
-    repair_round = 0
-    max_repair_rounds = 1 if count > 30 else 2
-    while len(track_ids) < count and repair_round < max_repair_rounds and time.monotonic() < deadline:
-        repair_round += 1
-        needed = count - len(track_ids)
-        yield _event({"type": "status", "message": f"Completando la lista ({len(track_ids)}/{count})…"})
-        repair_raw = call_ai(
-            _repair_prompt(name, mood, needed, added, rejected, not_found),
-            provider=provider,
-            model=model,
-            max_output_tokens=min(10000, max(4000, needed * 180)),
-            output_schema=_playlist_output_schema(include_description=False),
-        )
-        try:
-            repair_ai = parse_playlist_json(repair_raw)
-        except Exception:
-            repair_ai = {"tracks": []}
         before_count = len(track_ids)
-        yield from resolve_items(repair_ai.get("tracks", []), mark_replacement=True)
+        yield from resolve_items(filtered_candidates, mark_replacement=not is_first_round)
         if fatal:
             return
-        if len(track_ids) == before_count:
-            break
+
+        progress = len(track_ids) - before_count
+        consecutive_no_progress = 0 if progress > 0 else consecutive_no_progress + 1
+        rounds += 1
+
+    if stop_reason is None:
+        stop_reason = "completed" if len(track_ids) >= count else "unknown"
+    result["stop_reason"] = stop_reason
 
 
 def _new_result(mood):
     return {
         "track_ids": [], "added": [], "resolved_tracks": [], "not_found": [],
         "rejected": [], "replacement_added": [], "substitutes": [],
-        "fatal": {}, "description": mood,
+        "fatal": {}, "description": mood, "stop_reason": None,
     }
 
 
@@ -1015,8 +1242,7 @@ def api_create():
         count = max(5, min(int(data.get("count", 15)), 50))
     except (TypeError, ValueError):
         return jsonify({"error": "Cantidad de canciones inválida."}), 400
-    candidate_count = min(count + 6, 55)
-    deadline = time.monotonic() + 220
+    deadline = time.monotonic() + JOB_TIMEOUT_SECONDS
     provider = data.get("provider", "anthropic")
     model    = data.get("model", None)
     ai_error = ai_config_error(provider, model)
@@ -1026,7 +1252,7 @@ def api_create():
     def generate():
         result = _new_result(mood)
         try:
-            yield from stream_resolve_from_prompt(sp, name, mood, count, candidate_count, provider, model, deadline, set(), result)
+            yield from stream_resolve_from_prompt(sp, name, mood, count, provider, model, deadline, set(), result)
             if result["fatal"]:
                 yield _event({"type": "error", "error": result["fatal"]["error"]})
                 return
@@ -1067,7 +1293,10 @@ def api_create():
                 "not_found": result["not_found"],
                 "rejected": result["rejected"],
                 "target_count": count,
-                "timed_out": len(result["track_ids"]) < count and time.monotonic() >= deadline,
+                "timed_out": result["stop_reason"] == "deadline" or (
+                    len(result["track_ids"]) < count and time.monotonic() >= deadline
+                ),
+                "stop_reason": result["stop_reason"],
             })
         except Exception as e:
             app.logger.exception("Error en /api/create stream")
@@ -1089,8 +1318,7 @@ def api_add_to_playlist():
         count = max(1, min(int(data.get("count", 10)), 50))
     except (TypeError, ValueError):
         return jsonify({"error": "Cantidad de canciones inválida."}), 400
-    candidate_count = min(count + 6, 55)
-    deadline = time.monotonic() + 220
+    deadline = time.monotonic() + JOB_TIMEOUT_SECONDS
     provider = data.get("provider", "anthropic")
     model    = data.get("model", None)
     ai_error = ai_config_error(provider, model)
@@ -1121,7 +1349,7 @@ def api_add_to_playlist():
                 if isinstance(tr, dict) and tr.get("id"):
                     existing_ids.add(tr["id"])
 
-            yield from stream_resolve_from_prompt(sp, playlist_name, mood, count, candidate_count, provider, model, deadline, existing_ids, result)
+            yield from stream_resolve_from_prompt(sp, playlist_name, mood, count, provider, model, deadline, existing_ids, result)
             if result["fatal"]:
                 yield _event({"type": "error", "error": result["fatal"]["error"]})
                 return
@@ -1151,7 +1379,10 @@ def api_add_to_playlist():
                 "not_found": result["not_found"],
                 "rejected": result["rejected"],
                 "target_count": count,
-                "timed_out": len(result["track_ids"]) < count and time.monotonic() >= deadline,
+                "timed_out": result["stop_reason"] == "deadline" or (
+                    len(result["track_ids"]) < count and time.monotonic() >= deadline
+                ),
+                "stop_reason": result["stop_reason"],
             })
         except Exception as e:
             app.logger.exception("Error en /api/add_to_playlist stream")
@@ -1190,74 +1421,6 @@ def _playlist_output_schema(include_description):
         "required": required,
         "additionalProperties": False,
     }
-
-
-def _create_prompt(name, mood, count, candidate_count):
-    return f"""Eres un experto DJ y curador musical. El usuario quiere crear una playlist con este concepto:
-
-Título: "{name}"
-Descripción/Mood: "{mood}"
-Cantidad final deseada: {count}
-
-Genera {candidate_count} canciones candidatas para que el sistema pueda verificar disponibilidad en Spotify y quedarse con las mejores {count}. Deben ser canciones reales, oficiales y disponibles en Spotify.
-Respeta literalmente restricciones del usuario como instrumental, sin voces, género, BPM, mood, época, idioma, país, energía o artistas de referencia.
-Si el usuario menciona programar, enfoque, concentración, relajante, estudiar, deep, smooth, mentalidad o manifestación, prioriza canciones hipnóticas, limpias, repetitivas y de energía baja/media; evita tracks agresivos, ruidosos, industriales, peak-time, rave, acid o demasiado intensos aunque pertenezcan al género pedido.
-Evita inventar remixes, bootlegs, edits, club mixes o títulos raros si no estás seguro de que existen oficialmente.
-Prefiere tracks fáciles de encontrar por búsqueda de Spotify. Varía los artistas — no repitas más de 2 canciones del mismo artista.
-
-Responde SOLO en este formato JSON (sin markdown, sin texto extra):
-{{
-  "description": "Descripción corta de la playlist (1 oración)",
-  "tracks": [
-    {{"name": "Nombre exacto de la canción", "artist": "Artista exacto"}}
-  ]
-}}"""
-
-
-def _retry_prompt(name, mood, needed, added, not_found):
-    return f"""El usuario pidió esta playlist:
-
-Título: "{name}"
-Descripción/Mood: "{mood}"
-
-Ya encontré estas canciones reales en Spotify:
-{json.dumps(added, ensure_ascii=False)}
-
-Estas sugerencias NO se encontraron en Spotify o no fueron utilizables:
-{json.dumps(not_found, ensure_ascii=False)}
-
-Necesito exactamente {needed} reemplazos adicionales. Respeta estrictamente el prompt original del usuario y evita repetir artistas/canciones ya listadas. Si el prompt habla de programar/enfoque/relajante, los reemplazos deben ser suaves, hipnóticos, limpios y poco distractores, no peak-time ni ruidosos.
-Devuelve solo JSON en este formato:
-{{
-  "tracks": [
-    {{"name": "Nombre exacto en Spotify", "artist": "Artista exacto"}}
-  ]
-}}"""
-
-
-def _repair_prompt(name, mood, needed, added, rejected, not_found):
-    return f"""El intento anterior todavía no alcanzó la cantidad solicitada.
-
-Prompt original del usuario:
-Título: "{name}"
-Descripción/Mood: "{mood}"
-
-Canciones aceptadas hasta ahora:
-{json.dumps(added, ensure_ascii=False)}
-
-Canciones rechazadas por no cumplir el prompt:
-{json.dumps(rejected, ensure_ascii=False)}
-
-Canciones que no se encontraron en Spotify:
-{json.dumps(not_found, ensure_ascii=False)}
-
-Necesito {needed} canciones adicionales reales de Spotify. Respeta literalmente el prompt original. No propongas canciones ya aceptadas, rechazadas o no encontradas. Si el prompt habla de programar/enfoque/relajante, evita canciones ruidosas, agresivas o demasiado intensas aunque sean del género correcto.
-Devuelve SOLO JSON:
-{{
-  "tracks": [
-    {{"name": "Nombre exacto en Spotify", "artist": "Artista exacto"}}
-  ]
-}}"""
 
 
 @app.route("/api/providers")

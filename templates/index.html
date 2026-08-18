@@ -818,6 +818,10 @@
 
 <script>
 let analyzeData = null;
+// Fuente de verdad unica del timeout de jobs (crear/agregar): la calcula el
+// backend a partir de PLAYLISTAI_JOB_TIMEOUT_SECONDS + margen (ver app.py,
+// index()). Nunca hardcodear un numero distinto aqui.
+const JOB_TIMEOUT_MS = {{ job_timeout_ms }};
 
 // ── INIT ──
 async function init() {
@@ -1033,7 +1037,7 @@ function resetAnalyze() {
 // ── STREAMING COMPARTIDO (crear / agregar) ──
 async function streamPlaylistJob(endpoint, body, statusEl) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 270000);
+  const timeoutId = setTimeout(() => controller.abort(), JOB_TIMEOUT_MS);
   try {
     const r = await fetch(endpoint, {
       method: 'POST',

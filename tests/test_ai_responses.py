@@ -115,7 +115,6 @@ class AIJsonParsingTests(unittest.TestCase):
                     "Lo-Fi Work",
                     "mood",
                     1,
-                    1,
                     "anthropic",
                     "claude-sonnet-5",
                     time.monotonic() + 10,

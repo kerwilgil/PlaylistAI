@@ -73,6 +73,145 @@ Actualizado el 2026-07-16 contra la documentación oficial de OpenAI y Anthropic
 
 Los modelos anteriores se retiraron del selector para mantener únicamente las familias vigentes. `updateModelSelect()` valida el modelo guardado en `localStorage`; si ya no existe para el proveedor seleccionado, lo reemplaza por el primer modelo vigente antes de enviar nuevas consultas.
 
+## Resolución incremental por rondas (1.1.0)
+
+Antes (hasta 1.0.0): `/api/create` y `/api/add_to_playlist` pedían `count + 6`
+candidatos en UNA sola llamada gigante a la IA, con un único retry fijo y un
+"loop de reparación" cuyo tope de rondas estaba invertido (`1 if count > 30
+else 2` — pedidos grandes tenían MENOS margen para completarse). Con
+`count=50` eso era una sola llamada pidiendo ~55 canciones de golpe: lenta,
+frágil (más chance de JSON truncado) y con solo ~12% de oversampling. Root
+cause del bug "pido 50, llegan 10".
+
+Ahora `stream_resolve_from_prompt()` es un único loop de rondas incremental,
+sin distinguir "creación inicial" vs "reparación" — cada ronda pide un lote
+chico, se resuelve contra Spotify, y el loop sigue hasta completar el target o
+cortar por una condición explícita:
+
+- **Oversampling dinámico** (`_round_batch_size`): `ceil(needed * 1.4)`, con
+  piso de 6 (que valga la pena la llamada a IA) y techo de 18 (`BATCH_MIN_SIZE`
+  / `BATCH_MAX_SIZE`) por ronda. Se recalcula sobre `needed` en cada ronda, así
+  que nunca crece sin control.
+- **Rondas adaptativas** (`_max_rounds_for_count`): `max(4, min(12,
+  ceil(count/5) + 2))` — pedidos grandes permiten más rondas, con techo fijo
+  de 12 para nunca loopear indefinidamente.
+- **Corte por falta de progreso**: `NO_PROGRESS_ROUND_LIMIT = 2` — dos rondas
+  seguidas sin sumar ninguna canción cortan el loop (`stop_reason="no_progress"`).
+- **Deadline por ronda, no solo global**: antes de arrancar una ronda (excepto
+  la ronda 0, que siempre se intenta al menos una vez para no devolver un
+  resultado vacío) se compara el tiempo restante contra
+  `_round_time_budget_seconds(provider)` — el timeout real de la llamada a IA
+  (`LOCAL_AI_TIMEOUT_SECONDS` para Claude Code/Codex, 60s de `requests` para
+  las APIs) + margen. Si no alcanza razonablemente, corta con
+  `stop_reason="deadline"` en vez de arrancar una ronda que probablemente no
+  terminaría a tiempo.
+- **Historial de intentos** (`attempted_normalized`, clave `"artist|name"`
+  normalizada con `normalize_search_text`): acumula TODO lo intentado en el
+  job — aceptado, rechazado por prompt, no encontrado, y duplicados de
+  Spotify ID — para (a) filtrar candidatos repetidos de la IA ANTES de gastar
+  una búsqueda de Spotify y (b) prohibirle explícitamente a la IA repetirlos
+  en el prompt de la siguiente ronda.
+- **Prompt unificado** (`_round_prompt`): reemplaza a los antiguos
+  `_create_prompt`/`_retry_prompt`/`_repair_prompt`. La ronda 0 pide
+  descripción + candidatos iniciales; las siguientes reciben la lista de
+  aceptadas y de intentadas (capada a las últimas 60 para no inflar el
+  prompt) con prohibición explícita de repetirlas.
+- **`result["stop_reason"]`**: nuevo campo interno con el motivo exacto de
+  parada (`"completed"`, `"max_rounds"`, `"no_progress"`, `"deadline"` o
+  ausente si hubo `fatal`). Se expone también en el evento `done` del NDJSON
+  (campo `stop_reason`) sin romper los campos que el frontend ya leía
+  (`added`, `resolved_tracks`, `not_found`, `rejected`, `timed_out`, etc.).
+  `timed_out` ahora se calcula como `stop_reason == "deadline"` (además del
+  chequeo de reloj que ya existía), porque el corte por deadline sucede CON
+  margen de seguridad antes del `deadline` real — el chequeo de reloj solo no
+  bastaría para detectarlo en todos los casos.
+
+`PLAYLISTAI_JOB_TIMEOUT_SECONDS` (nueva env var, default 360s / 6 min, clamp
+120–600s, ver `.env.example` y `_job_timeout_seconds()` en `app.py`)
+reemplaza el `deadline = time.monotonic() + 220` hardcodeado. El mismo valor
+(+ `JOB_TIMEOUT_FRONTEND_MARGIN_SECONDS = 30`, en milisegundos) se manda al
+template en `index()` como `job_timeout_ms` y se usa en
+`templates/index.html` (`const JOB_TIMEOUT_MS`) para el `AbortController` de
+`streamPlaylistJob()` — ya no hay un `270000` hardcodeado desacoplado del
+backend; ambos números viven en un solo lugar de verdad (`app.py`).
+
+**Relación con `LOCAL_AI_TIMEOUT_SECONDS`** (`local_ai.py`): antes cubría una
+única llamada pidiendo hasta ~55 candidatos; con lotes de máximo 18 por ronda
+se bajó de 180s a 100s — sigue siendo holgado para una respuesta más chica y
+deja más margen dentro del mismo `PLAYLISTAI_JOB_TIMEOUT_SECONDS` para que
+quepan más rondas cuando se usa una suscripción local (Claude Code/Codex).
+
+El `candidate_count` que antes se pasaba como parámetro externo a
+`stream_resolve_from_prompt()` desapareció: el tamaño de cada lote se calcula
+internamente por ronda vía `_round_batch_size(needed)`, así que la firma de la
+función cambió (ya no recibe `candidate_count`) — ver `tests/test_ai_responses.py`
+y el nuevo `tests/test_incremental_rounds.py` para la firma vigente.
+
+## Restricciones duras vs preferencias suaves (1.1.0)
+
+Bug real (auditado): un usuario pidió "Lo-Fi / Chillhop instrumental... sin
+voces..." y la app agregó canciones CON voces. Causa raíz: la función que
+activaba el filtro de instrumental (`detect_hard_constraints`, antes
+`prompt_needs_instrumental_electronic_filter`) exigía DOS cosas a la vez —
+mención de instrumental/sin-voces Y contexto de género electrónico
+(techno/house/deep/...). "Lo-Fi"/"Chillhop" no calificaban como género
+electrónico, así que el filtro nunca se activaba y `track_allowed_by_prompt`
+dejaba pasar cualquier candidato, tuviera voz o no.
+
+**Decisión de diseño**: las restricciones explícitas del usuario tienen
+prioridad sobre alcanzar `target_count`. Es preferible devolver una playlist
+incompleta (menos canciones de las pedidas) que una completa que viole una
+restricción dura. Esto ya lo garantiza el loop de rondas existente
+(`stream_resolve_from_prompt` → `no_progress`/`max_rounds`/`deadline` como
+`stop_reason`) una vez que el filtro se aplica correctamente — el bug NO
+estaba en el loop de rondas, estaba en que el filtro casi nunca se activaba.
+
+**Restricciones duras** (`detect_hard_constraints(mood)`, calculada UNA VEZ al
+inicio del job a partir del mood original — el mood no cambia entre rondas —
+y reforzada literalmente en el prompt de CADA ronda vía `_round_prompt`, no
+solo en la ronda 0):
+- `instrumental`: "instrumental", "sin voces", "sin voz", "no vocal",
+  "without vocals". Activada SOLO por sus propios términos — YA NO exige
+  contexto de género electrónico.
+- `no_remix`: "sin remix(es)", "no remix(es)".
+- `no_live`: "sin/no live", "sin/no en vivo".
+
+Todas se verifican en TODAS las rondas y en el fallback de artista
+(`find_artist_fallback`), nunca solo en la búsqueda exacta — ambas rutas
+pasan por `track_allowed_by_prompt(sp, track, mood)`, que internamente llama
+a `detect_hard_constraints(mood)` (recómputo puro y barato sobre el mismo
+mood invariable del job — comportamiento idéntico a pasar el dict ya
+calculado, sin forzar un parámetro nuevo en `find_spotify_track`/
+`find_artist_fallback`, cuya firma se mantuvo estable a propósito para no
+romper los mocks de `tests/test_incremental_rounds.py`).
+
+**Preferencias suaves** (NO activan ningún filtro de rechazo — solo refuerzan
+tono en el prompt a la IA, ver `_round_prompt`): "programar", "enfoque",
+"concentración", "focus", "trabajo", "estudiar", "relajante", "deep",
+"smooth", etc. Antes vivían mezcladas con la detección de "instrumental"
+(cualquier mood de "trabajo" activaba sin querer el filtro de voces si además
+mencionaba género electrónico, o nunca lo activaba si no lo mencionaba) — con
+el fix quedaron separadas: nunca convierten un mood en prohibición absoluta
+de voces por sí solas.
+
+`electronic_context` (techno/house/electronic/deep/melodic/minimal/
+progressive/microhouse) se conserva, pero cambió su rol: ya NO decide si se
+activa la restricción dura de instrumental. Solo decide si
+`track_allowed_by_prompt` aplica vocabulario ADICIONAL de rechazo específico
+del caso original (acoustic/unplugged/radio edit + géneros no-electrónicos
+como salsa/reggaeton/rock/pop/etc.) — para no sobre-filtrar esos géneros en
+moods sin ese contexto (ej. un Lo-Fi instrumental sí puede incluir samples con
+textura "acoustic" en el título sin que eso implique voz).
+
+**Limitación real conocida**: la Search API de Spotify NO expone ningún
+atributo confiable de "instrumental" vs "vocal" (no hay audio-features de
+ese tipo disponibles aquí, y no se agregaron llamadas nuevas a la API para
+esto). La detección de voz es una heurística sobre el TEXTO del
+título/álbum del candidato (`candidate_label` — términos como "feat",
+"vocal", "vocal mix", "with vocals"), no una garantía. Un track con voz cuyo
+título no lo delata puede colarse; esto es una limitación de plataforma, no
+un bug de esta app.
+
 ## Gotchas conocidos del código
 
 ### `SpotifyOAuth(cache_handler=...)` — `None` NO desactiva el cache en disco
