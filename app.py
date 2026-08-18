@@ -276,6 +276,20 @@ def normalize_search_text(value):
     value = re.sub(r"[^a-z0-9]+", " ", value)
     return re.sub(r"\s+", " ", value).strip()
 
+
+def normalize_constraint_text(value):
+    """Normalizador especifico para `track_allowed_by_prompt()`. A diferencia
+    de `normalize_search_text()` (matching nombre/artista, donde SI conviene
+    ignorar "(feat. X)" para no arruinar el score de similitud contra el
+    titulo que la IA propuso), aqui el contenido entre parentesis/corchetes
+    es justo donde Spotify suele marcar "(feat. X)"/"(Remix)"/"(Live)" -- la
+    señal de rechazo mas fuerte disponible. Preservarlo es la correccion real
+    del bug confirmado en vivo (2026-08-18, ver CONTEXT.md). NO se modifico
+    normalize_search_text() -- sigue igual para matching."""
+    value = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
+    value = re.sub(r"[^a-z0-9]+", " ", value.lower())
+    return re.sub(r"\s+", " ", value).strip()
+
 def token_overlap_score(expected, actual):
     expected_tokens = set(normalize_search_text(expected).split())
     actual_tokens = set(normalize_search_text(actual).split())
@@ -304,6 +318,52 @@ def candidate_label(track):
     return f"{artist} – {track['name']}"
 
 SPOTIFY_PLAYLIST_DESCRIPTION_MAX = 300
+
+
+def extract_playlist_description(value, fallback=""):
+    """Validación SEMÁNTICA de la descripción, ANTES del guard de longitud
+    (`normalize_playlist_description`). Verificado en vivo (2026-08-18, ver
+    CONTEXT.md): un "description" que técnicamente era un string terminó
+    siendo el JSON COMPLETO de la respuesta de la IA serializado -- ej.
+    `{"description": "...", "tracks": [...]}`. El guard de longitud lo dejó
+    pasar (y truncó) porque solo mide caracteres, nunca valida que sea texto
+    humano. No se reprodujo de forma determinista sin volver a golpear la CLI
+    real (fuera de alcance de este parche); esta función asume que la IA/el
+    wrapper local puede devolver el objeto entero anidado dentro del propio
+    campo "description" en cualquier momento, y se defiende de eso SIN
+    heurísticas destructivas -- una descripción humana normal (aunque
+    mencione una palabra suelta como "tracks") nunca se toca."""
+    if isinstance(value, dict):
+        nested = value.get("description")
+        if isinstance(nested, str) and nested.strip():
+            return nested.strip()
+        return fallback if isinstance(fallback, str) else ""
+    if not isinstance(value, str):
+        return fallback if isinstance(fallback, str) else ""
+
+    candidate = value.strip()
+    fenced = re.match(r"^```(?:json)?\s*(.*?)\s*```$", candidate, flags=re.S)
+    if fenced:
+        candidate = fenced.group(1).strip()
+
+    looks_like_json = (
+        (candidate.startswith("{") and candidate.endswith("}"))
+        or (candidate.startswith("[") and candidate.endswith("]"))
+        or '"tracks":' in candidate
+    )
+    if not looks_like_json:
+        return value
+
+    try:
+        parsed = json.loads(candidate)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return fallback if isinstance(fallback, str) else ""
+
+    if isinstance(parsed, dict):
+        nested = parsed.get("description")
+        if isinstance(nested, str) and nested.strip():
+            return nested.strip()
+    return fallback if isinstance(fallback, str) else ""
 
 
 def normalize_playlist_description(value, fallback=""):
@@ -399,12 +459,18 @@ def track_allowed_by_prompt(sp, track, mood):
     Search API de Spotify no expone ningún atributo confiable de
     "instrumental"/"vocal" — esto es una heurística sobre el TEXTO del
     título/álbum del candidato (`candidate_label`), no una detección real de
-    audio. No se agregan llamadas nuevas a la API de Spotify."""
+    audio. No se agregan llamadas nuevas a la API de Spotify.
+
+    Usa `normalize_constraint_text()` (no `normalize_search_text()`) sobre el
+    label del candidato: Spotify casi siempre marca "(feat. X)"/"(Remix)"/
+    "(Live)" entre paréntesis, y `normalize_search_text()` los elimina (bug
+    real confirmado en vivo 2026-08-18 — "Anno Domini Beats – Yesterday
+    (feat. JC Flow...)" pasó el filtro con instrumental=True). Ver CONTEXT.md."""
     constraints = detect_hard_constraints(mood)
     if not constraints["any"]:
         return True
 
-    label = normalize_search_text(candidate_label(track))
+    label = normalize_constraint_text(candidate_label(track))
     padded_label = f" {label} "
 
     rejected_terms = []
@@ -1248,7 +1314,8 @@ def stream_resolve_from_prompt(sp, name, mood, count, provider, model, deadline,
                 ai = {"tracks": []}
 
         if is_first_round:
-            result["description"] = normalize_playlist_description(ai.get("description"), fallback=mood)
+            semantic_description = extract_playlist_description(ai.get("description"), fallback=mood)
+            result["description"] = normalize_playlist_description(semantic_description, fallback=mood)
             yield _event({"type": "status", "message": "Verificando canciones en Spotify…"})
 
         candidates = ai.get("tracks", []) if isinstance(ai.get("tracks"), list) else []
