@@ -10,7 +10,12 @@ import subprocess
 import tempfile
 
 
-LOCAL_AI_TIMEOUT_SECONDS = 180
+# Antes cubría una unica llamada pidiendo hasta ~55 candidatos de una. Desde la
+# resolucion incremental por rondas (ver app.py/_round_batch_size) cada llamada
+# pide como maximo ~18 candidatos, así que un timeout menor sigue siendo
+# holgado y permite mas rondas dentro del mismo PLAYLISTAI_JOB_TIMEOUT_SECONDS
+# (ver relacion documentada en CONTEXT.md).
+LOCAL_AI_TIMEOUT_SECONDS = 100
 AUTH_CHECK_TIMEOUT_SECONDS = 10
 
 

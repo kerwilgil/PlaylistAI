@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Flask-3.1.3%2B-000000?logo=flask&logoColor=white" alt="Flask 3.1.3 o superior">
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12 o superior">
-  <img src="https://img.shields.io/badge/versión-1.0.0-1DB954" alt="Versión 1.0.0">
+  <img src="https://img.shields.io/badge/versión-1.1.0-1DB954" alt="Versión 1.1.0">
   <a href="README.md"><img src="https://img.shields.io/badge/idiomas-ES%20%7C%20EN-0F766E" alt="Español e inglés"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-blue" alt="Licencia MIT"></a>
 </p>

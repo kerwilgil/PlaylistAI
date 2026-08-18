@@ -118,7 +118,7 @@ class LocalAIProviderApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Suscripción local", html)
-        self.assertIn("PlaylistAI 1.0.0", html)
+        self.assertIn("PlaylistAI 1.1.0", html)
 
     @patch("app.cli_status")
     def test_provider_endpoint_groups_subscription_and_api_modes(self, cli_status):
