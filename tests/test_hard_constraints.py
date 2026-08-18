@@ -131,6 +131,65 @@ class NaturalNegationHardConstraintTests(unittest.TestCase):
         self.assertFalse(constraints["no_live"])
 
 
+class ParentheticalConstraintFilterTests(unittest.TestCase):
+    """Cobertura del FINAL QUALITY PATCH (2026-08-18): `track_allowed_by_prompt()`
+    usaba `normalize_search_text()`, que elimina el contenido entre paréntesis
+    -- así que un "(feat. X)" real de Spotify nunca llegaba al chequeo de
+    rejected_terms. `normalize_constraint_text()` preserva ese contenido.
+    `normalize_search_text()` en sí NO se tocó (matching nombre/artista sigue
+    igual, cubierto en `test_matching_with_parentheses_unchanged` abajo)."""
+
+    def test_feat_in_parentheses_rejected_with_instrumental(self):
+        mood = "Lo-Fi instrumental sin voces"
+        track = _spotify_track("id-1", "Yesterday (feat. JC Flow)", "Anno Domini Beats")
+        self.assertFalse(app.track_allowed_by_prompt(Mock(), track, mood))
+
+    def test_feat_in_brackets_rejected(self):
+        mood = "Lo-Fi instrumental sin voces"
+        track = _spotify_track("id-2", "Yesterday [feat. JC Flow]", "Anno Domini Beats")
+        self.assertFalse(app.track_allowed_by_prompt(Mock(), track, mood))
+
+    def test_vocal_mix_in_parentheses_rejected(self):
+        mood = "Lo-Fi instrumental sin voces"
+        track = _spotify_track("id-3", "Late Night (Vocal Mix)", "Some Artist")
+        self.assertFalse(app.track_allowed_by_prompt(Mock(), track, mood))
+
+    def test_remix_in_parentheses_rejected_when_no_remix(self):
+        mood = "Evita remixes"
+        track = _spotify_track("id-4", "Late Night (Remix)", "Some Artist")
+        self.assertFalse(app.track_allowed_by_prompt(Mock(), track, mood))
+
+    def test_live_in_parentheses_rejected_when_no_live(self):
+        mood = "Evita versiones live"
+        track = _spotify_track("id-5", "Late Night (Live)", "Some Artist")
+        self.assertFalse(app.track_allowed_by_prompt(Mock(), track, mood))
+
+    def test_normal_titles_still_allowed(self):
+        mood = "Lo-Fi instrumental sin voces"
+        track = _spotify_track("id-6", "Rainy Study Loop (Extended)", "Some Artist")
+        self.assertTrue(app.track_allowed_by_prompt(Mock(), track, mood))
+
+    def test_matching_with_parentheses_unchanged(self):
+        """`normalize_search_text()` (usada por `token_overlap_score`/matching
+        nombre-artista, NO por el filtro de restricciones) sigue ignorando
+        paréntesis exactamente como antes -- no se tocó."""
+        score = app.token_overlap_score(
+            "Yesterday", "Yesterday (feat. JC Flow, Tiffany Wilson)"
+        )
+        self.assertEqual(score, 1.0)
+
+    def test_live_bug_regression_anno_domini_beats(self):
+        """Regresión exacta del track real observado en el LIVE VALIDATION 50
+        (2026-08-18): pasó el filtro pese a mood='sin voces'. Debe rechazarse."""
+        mood = "Lo-Fi instrumental sin voces para trabajar."
+        track = _spotify_track(
+            "id-live-bug",
+            "Yesterday (feat. JC Flow, Tiffany Wilson & Roc'Phella)",
+            "Anno Domini Beats",
+        )
+        self.assertFalse(app.track_allowed_by_prompt(Mock(), track, mood))
+
+
 class FallbackNeverViolatesHardConstraintTests(unittest.TestCase):
     def test_b_exact_and_fallback_reject_vocal_track(self):
         """Caso B: mood con hard constraint instrumental/sin voces.
