@@ -255,16 +255,53 @@ una corrida real. No confirmamos ese número en documentación oficial de Spotif
 es un guard de compatibilidad basado en el comportamiento real observado de la
 API, con margen conservador: `SPOTIFY_PLAYLIST_DESCRIPTION_MAX = 300`.
 
-`normalize_playlist_description(value, fallback="")` es la fuente única de
-verdad: acepta `None`/tipos inesperados sin fallar (cae al `fallback`),
-normaliza whitespace, y si trunca incluye el `"..."` DENTRO del límite (nunca
-lo supera). Se aplica en dos puntos — al calcular `result["description"]` en
-`stream_resolve_from_prompt` (ronda 0) y otra vez justo antes de
-`sp.current_user_playlist_create(...)` en `/api/create` — de forma idempotente,
-como defensa en profundidad. El prompt de la ronda 0 (`_round_prompt`) también
-le pide a la IA una descripción de máximo 240 caracteres, pero eso es solo una
-sugerencia — el guard del backend es lo que garantiza el límite real, nunca se
-confía en que la IA lo respete.
+`normalize_playlist_description(value, fallback="")` limita LONGITUD: acepta
+`None`/tipos inesperados sin fallar (cae al `fallback`), normaliza whitespace,
+y si trunca incluye el `"..."` DENTRO del límite (nunca lo supera). El prompt
+de la ronda 0 (`_round_prompt`) también le pide a la IA una descripción de
+máximo 240 caracteres, pero eso es solo una sugerencia — el guard del backend
+es lo que garantiza el límite real, nunca se confía en que la IA lo respete.
+
+**Validación SEMÁNTICA (2026-08-18, ver LIVE VALIDATION 50)**: el guard de
+longitud por sí solo no basta. En una corrida real, `result["description"]`
+terminó siendo el JSON COMPLETO de la respuesta de la IA serializado —
+`{"description": "...", "tracks": [...]}` — truncado a 300 caracteres por el
+guard de longitud, que solo mide caracteres y no valida que el contenido sea
+texto humano. No se reprodujo de forma determinista contra la CLI real (no
+está claro si es un quirk de Claude Code CLI o del modelo anidando su propia
+salida); se optó por una defensa en la capa de parseo en vez de perseguir la
+causa exacta. `extract_playlist_description(value, fallback="")` corre ANTES
+del guard de longitud: si `value` es un dict o un string que "parece" un
+objeto/lista JSON (empieza y termina con `{}`/`[]`, contiene `"tracks":`, o
+viene envuelto en un bloque ` ```json `), intenta extraer un campo
+`description` string válido de ahí adentro; si no lo encuentra, cae al
+`fallback` (el mood original) — nunca deja pasar un objeto/lista JSON crudo
+como descripción visible. No es una heurística destructiva: un texto humano
+normal, aunque mencione la palabra "tracks" suelta, no se toca. El pipeline
+completo queda: `extract_playlist_description()` → `normalize_playlist_description()`
+al calcular `result["description"]` en `stream_resolve_from_prompt` (ronda 0),
+y el guard de longitud se repite otra vez justo antes de
+`sp.current_user_playlist_create(...)` en `/api/create`, como defensa en
+profundidad de solo-longitud (la validación semántica es de una sola pasada,
+en el punto donde se conoce el `mood` para el fallback).
+
+## Filtro de restricciones duras: paréntesis preservados (1.1.0)
+
+Detectado en LIVE VALIDATION 50 (2026-08-18) con un track real: "Anno Domini
+Beats – Yesterday (feat. JC Flow, Tiffany Wilson & Roc'Phella)" pasó el filtro
+de instrumental/sin-voces pese a que el título tiene "feat." explícito.
+Causa: `track_allowed_by_prompt()` normalizaba el label del candidato con
+`normalize_search_text()`, que **elimina el contenido entre paréntesis**
+(gotcha ya documentado más abajo, usado a propósito para el matching
+nombre/artista — evita que "(feat. X)" arruine el score de similitud). Pero
+ese mismo contenido es justo donde Spotify casi siempre marca "(feat. X)",
+"(Remix)", "(Live)" — la señal de rechazo más fuerte que existe.
+
+Fix: `normalize_constraint_text()` es un normalizador nuevo, usado SOLO por
+`track_allowed_by_prompt()`, idéntico a `normalize_search_text()` salvo que
+NO elimina paréntesis/corchetes. `normalize_search_text()` en sí **no se
+tocó** — sigue igual para `token_overlap_score()`/matching nombre-artista en
+`find_spotify_track()`.
 
 ## Restricciones duras: formas negativas naturales (1.1.0)
 
