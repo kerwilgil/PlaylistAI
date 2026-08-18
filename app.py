@@ -288,7 +288,10 @@ SPOTIFY_ARTIST_CACHE = {}
 CACHE_MAX_ENTRIES = 500
 
 def spotify_search(sp, query, limit=10):
-    limit = max(1, min(int(limit), 20))
+    # Spotify Search API en Development Mode admite maximo 10 resultados por
+    # GET /search (antes aceptaba hasta 20-50; ver CONTEXT.md). Este clamp es
+    # la ultima linea de defensa aunque un caller pida mas.
+    limit = max(1, min(int(limit), 10))
     cache_key = (query, limit)
     if cache_key not in SPOTIFY_SEARCH_CACHE:
         if len(SPOTIFY_SEARCH_CACHE) >= CACHE_MAX_ENTRIES:
@@ -458,7 +461,7 @@ def find_artist_fallback(sp, artist, exclude_ids=None, mood=None):
     exclude_ids = exclude_ids or set()
     best = None
     best_pop = -1
-    for track in spotify_search(sp, f'artist:"{artist}"', limit=20):
+    for track in spotify_search(sp, f'artist:"{artist}"', limit=10):
         track_id = track.get("id")
         if not track_id or track_id in exclude_ids:
             continue
@@ -1066,8 +1069,18 @@ def stream_resolve_from_prompt(sp, name, mood, count, provider, model, deadline,
                     track, is_fallback, was_rejected = fut.result()
                 except SpotifyException as e:
                     if getattr(e, "http_status", None) == 429:
-                        fatal["error"] = ("Spotify limitó las peticiones (429) por demasiadas "
-                                          "búsquedas seguidas. Espera unos minutos e intenta de nuevo.")
+                        # reason viene del body de error de Spotify cuando lo incluye
+                        # (spotipy lo expone en SpotifyException.reason); QUOTA_EXCEEDED
+                        # indica un limite de cuota de la app, no un rate limit pasajero
+                        # de peticiones — vale la pena distinguirlo para el usuario.
+                        if getattr(e, "reason", None) == "QUOTA_EXCEEDED":
+                            fatal["error"] = ("Spotify indica que esta app alcanzó su cuota "
+                                              "(QUOTA_EXCEEDED), no un límite temporal de "
+                                              "peticiones. Revisa el modo/cuota de la app en "
+                                              "el Developer Dashboard de Spotify.")
+                        else:
+                            fatal["error"] = ("Spotify limitó las peticiones (429) por demasiadas "
+                                              "búsquedas seguidas. Espera unos minutos e intenta de nuevo.")
                         for f in futures:
                             f.cancel()
                         break
