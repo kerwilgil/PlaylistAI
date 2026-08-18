@@ -81,6 +81,56 @@ class DetectHardConstraintsTests(unittest.TestCase):
             self.assertFalse(constraints["instrumental"], msg=f"mood={mood!r}")
 
 
+class NaturalNegationHardConstraintTests(unittest.TestCase):
+    """Cobertura del LIVE VALIDATION GATE (2026-08-18): "Evita remixes y
+    versiones live" no activaba no_remix/no_live porque solo se buscaban
+    formas literales tipo "sin remix"/"no live". Ver `_negated_within_window`
+    en app.py -- ventana corta sobre disparadores "evita"/"evitar", no un
+    parser NLP genérico."""
+
+    def test_evita_remixes_y_versiones_live_activates_both(self):
+        mood = "Evita remixes y versiones live"
+        constraints = app.detect_hard_constraints(mood)
+        self.assertTrue(constraints["no_remix"])
+        self.assertTrue(constraints["no_live"])
+
+    def test_evita_versiones_en_vivo_activates_no_live(self):
+        mood = "Evita versiones en vivo"
+        constraints = app.detect_hard_constraints(mood)
+        self.assertTrue(constraints["no_live"])
+
+    def test_evitar_remixes_activates_no_remix(self):
+        mood = "Evitar remixes"
+        constraints = app.detect_hard_constraints(mood)
+        self.assertTrue(constraints["no_remix"])
+
+    def test_quiero_remixes_does_not_activate_no_remix(self):
+        """Falso positivo protegido: mencionar 'remixes' sin negación no debe
+        rechazar nada."""
+        mood = "Quiero remixes"
+        constraints = app.detect_hard_constraints(mood)
+        self.assertFalse(constraints["no_remix"])
+
+    def test_quiero_versiones_live_does_not_activate_no_live(self):
+        mood = "Quiero versiones live"
+        constraints = app.detect_hard_constraints(mood)
+        self.assertFalse(constraints["no_live"])
+
+    def test_prefiero_grabaciones_en_vivo_does_not_activate_no_live(self):
+        mood = "Prefiero grabaciones en vivo"
+        constraints = app.detect_hard_constraints(mood)
+        self.assertFalse(constraints["no_live"])
+
+    def test_lofi_instrumental_sin_voces_behavior_unchanged(self):
+        """El caso original (instrumental por sus propios términos, sin
+        depender de género electrónico) debe seguir intacto tras este cambio."""
+        mood = "Lo-Fi instrumental sin voces"
+        constraints = app.detect_hard_constraints(mood)
+        self.assertTrue(constraints["instrumental"])
+        self.assertFalse(constraints["no_remix"])
+        self.assertFalse(constraints["no_live"])
+
+
 class FallbackNeverViolatesHardConstraintTests(unittest.TestCase):
     def test_b_exact_and_fallback_reject_vocal_track(self):
         """Caso B: mood con hard constraint instrumental/sin voces.

@@ -303,6 +303,55 @@ def candidate_label(track):
     artist = track["artists"][0]["name"] if track.get("artists") else "Artista desconocido"
     return f"{artist} – {track['name']}"
 
+SPOTIFY_PLAYLIST_DESCRIPTION_MAX = 300
+
+
+def normalize_playlist_description(value, fallback=""):
+    """Guard de compatibilidad antes de mandar la descripción a
+    `sp.current_user_playlist_create()`. Verificado en vivo (2026-08-18, ver
+    CONTEXT.md): Spotify rechazó con 400 "Description exceeds limit" una
+    descripción generada por la IA -- no es un límite que hayamos confirmado
+    en documentación oficial de Spotify, es un guard basado en el
+    comportamiento real observado de la API, con margen conservador.
+    Acepta None/no-string sin fallar, normaliza whitespace, y trunca
+    incluyendo el "..." dentro del límite (nunca lo supera)."""
+    if not isinstance(value, str):
+        value = fallback if isinstance(fallback, str) else ""
+    value = re.sub(r"\s+", " ", value).strip()
+    if not value:
+        value = re.sub(r"\s+", " ", fallback if isinstance(fallback, str) else "").strip()
+    if len(value) <= SPOTIFY_PLAYLIST_DESCRIPTION_MAX:
+        return value
+    ellipsis = "..."
+    cutoff = SPOTIFY_PLAYLIST_DESCRIPTION_MAX - len(ellipsis)
+    return value[:cutoff].rstrip() + ellipsis
+
+
+NEGATION_TRIGGER_WORDS = ("evita", "evitar")
+NEGATION_WINDOW_TOKENS = 6
+REMIX_TERMS = ("remix", "remixes", "rmx", "mashup", "mashups")
+LIVE_TERMS = ("live", "vivo", "vivos")
+
+
+def _negated_within_window(tokens, terms):
+    """Detecta forma negativa natural tipo "evita remixes y versiones live":
+    si un token disparador ("evita"/"evitar") aparece antes de alguno de
+    `terms` dentro de una ventana corta de palabras siguientes. Deliberadamente
+    NO es un parser NLP genérico -- es una ventana fija sobre texto ya
+    normalizado (ver `normalize_search_text`), acotada a los disparadores
+    "evita"/"evitar" (no "sin"/"no", que son demasiado comunes en español para
+    usarse como disparador de ventana sin arrastrar falsos positivos). Con esto
+    "evita remixes y versiones live" activa remix Y live desde un solo
+    disparador, pero "quiero remixes" o "prefiero grabaciones en vivo" no
+    activan nada porque no hay disparador de negación presente."""
+    for index, token in enumerate(tokens):
+        if token in NEGATION_TRIGGER_WORDS:
+            window = tokens[index + 1:index + 1 + NEGATION_WINDOW_TOKENS]
+            if any(term in window for term in terms):
+                return True
+    return False
+
+
 def detect_hard_constraints(mood):
     """Restricciones DURAS detectadas en el mood/prompt del usuario (ver
     CONTEXT.md, "Restricciones duras vs preferencias suaves"). Deben cumplirse
@@ -322,15 +371,16 @@ def detect_hard_constraints(mood):
     (géneros no-electrónicos, acoustic/unplugged/radio edit) — nunca como
     condición para activar la restricción dura."""
     text = normalize_search_text(mood)
+    tokens = text.split()
     instrumental = any(term in text for term in [
         "instrumental", "sin voces", "sin voz", "no vocal", "without vocals",
     ])
     no_remix = any(term in text for term in [
         "sin remix", "sin remixes", "no remix", "no remixes",
-    ])
+    ]) or _negated_within_window(tokens, REMIX_TERMS)
     no_live = any(term in text for term in [
         "sin vivo", "sin en vivo", "no live", "sin live", "no en vivo",
-    ])
+    ]) or _negated_within_window(tokens, LIVE_TERMS)
     electronic_context = any(term in text for term in [
         "techno", "house", "electronic", "electronica", "electronico",
         "deep", "melodic", "minimal", "progressive", "microhouse"
@@ -953,7 +1003,8 @@ def _round_prompt(name, mood, count, batch_size, round_index, accepted, attempte
             f"verificar disponibilidad en Spotify y quedarse con las mejores {count}."
         )
         schema_hint = (
-            '{\n  "description": "Descripción corta de la playlist (1 oración)",'
+            '{\n  "description": "Descripción corta de la playlist, 1 oración, '
+            'máximo 240 caracteres",'
             '\n  "tracks": [\n    {"name": "Nombre exacto de la canción", "artist": "Artista exacto"}\n  ]\n}'
         )
     else:
@@ -1197,7 +1248,7 @@ def stream_resolve_from_prompt(sp, name, mood, count, provider, model, deadline,
                 ai = {"tracks": []}
 
         if is_first_round:
-            result["description"] = ai.get("description", mood)
+            result["description"] = normalize_playlist_description(ai.get("description"), fallback=mood)
             yield _event({"type": "status", "message": "Verificando canciones en Spotify…"})
 
         candidates = ai.get("tracks", []) if isinstance(ai.get("tracks"), list) else []
@@ -1275,7 +1326,10 @@ def api_create():
 
             yield _event({"type": "status", "message": "Creando la playlist en tu Spotify…"})
             try:
-                pl = sp.current_user_playlist_create(name=name, public=False, description=result["description"])
+                pl = sp.current_user_playlist_create(
+                    name=name, public=False,
+                    description=normalize_playlist_description(result["description"], fallback=mood),
+                )
             except SpotifyException as e:
                 if getattr(e, "http_status", None) == 403:
                     yield _event({"type": "error", "error": "Spotify rechazó crear la playlist (403). Cierra sesión con 'Salir', vuelve a conectar Spotify y acepta los permisos de modificación de playlists."})
