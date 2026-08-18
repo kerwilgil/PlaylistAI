@@ -23,16 +23,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.0.0"><strong>Descargar PlaylistAI 1.0.0</strong></a>
+  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0"><strong>Descargar PlaylistAI 1.1.0</strong></a>
 </p>
 
 ## Descargar
 
 - **Windows 10/11 (x64):** descarga
-  [`PlaylistAI-1.0.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.0.0/PlaylistAI-1.0.0-Windows-x64.zip),
+  [`PlaylistAI-1.1.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.0/PlaylistAI-1.1.0-Windows-x64.zip),
   extrae la carpeta y abre `PlaylistAI.exe`.
 - **macOS:** descarga el código fuente desde la
-  [release 1.0.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.0.0)
+  [release 1.1.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0)
   y genera `PlaylistAI.app` en el propio Mac con `bash scripts/build_macos.sh`.
 
 La aplicación funciona localmente en `127.0.0.1:5000`. Tus credenciales permanecen
@@ -176,7 +176,7 @@ añadas tus credenciales; guarda el archivo y vuelve a ejecutar
 archivo `.env` nunca se incorpora al ejecutable. Para detener completamente el
 servidor en Windows, finaliza `PlaylistAI.exe` desde el Administrador de tareas.
 La carpeta `dist\` está excluida de Git. Puedes descargar el binario desde la
-[release 1.0.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.0.0) o
+[release 1.1.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0) o
 generarlo en Windows ejecutando el script de build.
 
 ### Crear el `.app` de macOS
