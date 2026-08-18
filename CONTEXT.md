@@ -212,6 +212,41 @@ título/álbum del candidato (`candidate_label` — términos como "feat",
 título no lo delata puede colarse; esto es una limitación de plataforma, no
 un bug de esta app.
 
+## Parche de compatibilidad: Search API limit=10 en Development Mode (1.1.0)
+
+Detectado en verificación en vivo (2026-08-18): la Search API de Spotify
+(`GET /search`) para esta app, registrada en **Development Mode**, ahora
+rechaza con `400 Invalid limit` cualquier `limit` mayor a **10** — antes
+aceptaba hasta 20-50. Confirmado directamente contra la API real (fuera de
+sesión de usuario, solo con `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` vía
+client_credentials): `limit=10` → 200, `limit=15`/`20`/`50` → 400.
+
+Esto rompía en silencio `find_artist_fallback()` (pedía `limit=20`): cada
+intento de fallback lanzaba una `SpotifyException` que `resolve_one` ya
+capturaba como "no encontrada" — sin crashear, pero sin usar nunca el
+fallback real de artista, y sumando llamadas fallidas que aceleran el 429.
+
+Fix: `spotify_search()` clampea a `min(limit, 10)` (antes `20`) como última
+línea de defensa, y `find_artist_fallback()` pide explícitamente `limit=10`
+para reflejar el contrato real. `find_spotify_track()` ya pedía `limit=5`,
+sin cambios. No se tocaron límites de otros endpoints (p.ej. `limit=100` de
+`sp.playlist_items()`, que es un endpoint distinto con su propio máximo).
+
+Si Spotify vuelve a ajustar esta cuota (subirla o bajarla más), el punto
+único de verdad es el clamp dentro de `spotify_search()` — no hay que
+perseguir cada `limit=` del archivo.
+
+### Diferenciar `QUOTA_EXCEEDED` de un 429 genérico
+
+`SpotifyException` (spotipy) expone `.reason`, tomado del campo `reason` del
+cuerpo de error de Spotify cuando lo incluye. El manejo de 429 en
+`stream_resolve_from_prompt` ahora distingue: si `e.reason == "QUOTA_EXCEEDED"`
+el mensaje le dice al usuario que es un límite de cuota de la app (no un rate
+limit pasajero) y a revisar el Developer Dashboard; cualquier otro 429 sigue
+mostrando el mensaje genérico de "espera unos minutos". No siempre viene ese
+`reason` — depende de si Spotify lo incluye en el cuerpo de esa respuesta en
+particular — así que esto es un mejor-esfuerzo, no una garantía.
+
 ## Gotchas conocidos del código
 
 ### `SpotifyOAuth(cache_handler=...)` — `None` NO desactiva el cache en disco
