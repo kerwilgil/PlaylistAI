@@ -23,16 +23,16 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.0.0"><strong>Download PlaylistAI 1.0.0</strong></a>
+  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0"><strong>Download PlaylistAI 1.1.0</strong></a>
 </p>
 
 ## Download
 
 - **Windows 10/11 (x64):** download
-  [`PlaylistAI-1.0.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.0.0/PlaylistAI-1.0.0-Windows-x64.zip),
+  [`PlaylistAI-1.1.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.0/PlaylistAI-1.1.0-Windows-x64.zip),
   extract the folder, and open `PlaylistAI.exe`.
 - **macOS:** download the source code from
-  [release 1.0.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.0.0)
+  [release 1.1.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0)
   and build `PlaylistAI.app` on the Mac with `bash scripts/build_macos.sh`.
 
 PlaylistAI runs locally on `127.0.0.1:5000`. Your credentials remain in the
