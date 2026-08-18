@@ -247,6 +247,39 @@ mostrando el mensaje genérico de "espera unos minutos". No siempre viene ese
 `reason` — depende de si Spotify lo incluye en el cuerpo de esa respuesta en
 particular — así que esto es un mejor-esfuerzo, no una garantía.
 
+## Guard de compatibilidad: descripción de playlist (1.1.0)
+
+Detectado en LIVE VALIDATION GATE (2026-08-18): `sp.current_user_playlist_create()`
+rechazó con `400 Description exceeds limit` una descripción generada por la IA en
+una corrida real. No confirmamos ese número en documentación oficial de Spotify —
+es un guard de compatibilidad basado en el comportamiento real observado de la
+API, con margen conservador: `SPOTIFY_PLAYLIST_DESCRIPTION_MAX = 300`.
+
+`normalize_playlist_description(value, fallback="")` es la fuente única de
+verdad: acepta `None`/tipos inesperados sin fallar (cae al `fallback`),
+normaliza whitespace, y si trunca incluye el `"..."` DENTRO del límite (nunca
+lo supera). Se aplica en dos puntos — al calcular `result["description"]` en
+`stream_resolve_from_prompt` (ronda 0) y otra vez justo antes de
+`sp.current_user_playlist_create(...)` en `/api/create` — de forma idempotente,
+como defensa en profundidad. El prompt de la ronda 0 (`_round_prompt`) también
+le pide a la IA una descripción de máximo 240 caracteres, pero eso es solo una
+sugerencia — el guard del backend es lo que garantiza el límite real, nunca se
+confía en que la IA lo respete.
+
+## Restricciones duras: formas negativas naturales (1.1.0)
+
+Detectado en el mismo LIVE VALIDATION GATE: el mood "Evita remixes y versiones
+live" no activaba `no_remix`/`no_live` porque `detect_hard_constraints()` solo
+buscaba formas literales adyacentes ("sin remix", "no live"). `_negated_within_window()`
+agrega una ventana corta (6 tokens) sobre el texto ya normalizado, anclada
+específicamente a los disparadores "evita"/"evitar" (deliberadamente NO se usó
+"sin"/"no" como disparador de ventana — son demasiado comunes en español y
+arrastrarían falsos positivos lejos de la restricción real). Con esto, un solo
+"evita" antes de "remixes y versiones live" activa ambas restricciones sin
+necesidad de repetir la negación para cada término. Sigue sin ser un parser NLP
+genérico: "quiero remixes" o "prefiero grabaciones en vivo" no activan nada
+porque no hay disparador de negación presente.
+
 ## Gotchas conocidos del código
 
 ### `SpotifyOAuth(cache_handler=...)` — `None` NO desactiva el cache en disco
