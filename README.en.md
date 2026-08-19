@@ -31,7 +31,12 @@
 - **Windows 10/11 (x64):** download
   [`PlaylistAI-1.1.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.0/PlaylistAI-1.1.0-Windows-x64.zip),
   extract the folder, and open `PlaylistAI.exe`.
-- **macOS:** download the source code from
+- **macOS (Apple Silicon):** download
+  [`PlaylistAI-1.1.0-macOS-arm64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.0/PlaylistAI-1.1.0-macOS-arm64.zip),
+  unzip it, and move `PlaylistAI.app` to *Applications*. The app is ad-hoc signed
+  (not notarized), so the first launch must be right click → **Open** to approve
+  it in Gatekeeper.
+- **macOS (Intel) or build it yourself:** download the source code from
   [release 1.1.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0)
   and build `PlaylistAI.app` on the Mac with `bash scripts/build_macos.sh`.
 
