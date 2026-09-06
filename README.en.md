@@ -39,7 +39,7 @@
 - ⚡ **Parallel track verification** — concurrent searches to speed up large playlist creation.
 - 💻 **Local-first** — runs on your machine (`127.0.0.1:5000`); credentials in `.env`, never bundled.
 - 🪟 **Native Windows support** — single-file `.exe` built with PyInstaller.
-- 🍎 **Native macOS support** — ad-hoc signed `.app` for local use.
+- 🍎 **Native macOS support** — ad-hoc signed `.app` for local use; Apple Silicon prebuilt binary available.
 
 ---
 
@@ -50,7 +50,8 @@
 | Platform | Link |
 |----------|------|
 | **Windows 10/11 (x64)** | [`PlaylistAI-1.1.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.0/PlaylistAI-1.1.0-Windows-x64.zip) — extract and run `PlaylistAI.exe` |
-| **macOS (Apple Silicon / Intel)** | Download source from [release 1.1.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0) and build with `bash scripts/build_macos.sh` |
+| **macOS (Apple Silicon)** | [`PlaylistAI-1.1.0-macOS-arm64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.0/PlaylistAI-1.1.0-macOS-arm64.zip) — unzip, move `PlaylistAI.app` to *Applications*; first launch: right-click → **Open** (ad-hoc signed, not notarized) |
+| **macOS (Intel) or build yourself** | Download source from [release 1.1.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0) and build with `bash scripts/build_macos.sh` |
 | **Source code** | `git clone https://github.com/kerwilgil/PlaylistAI.git` |
 
 > The app runs at `http://127.0.0.1:5000`. Credentials stay in `.env` next to the executable (Windows) or in `~/Library/Application Support/PlaylistAI/.env` (macOS). **Never** embedded in the binary.
