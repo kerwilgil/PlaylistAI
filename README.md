@@ -17,6 +17,7 @@
   <img src="https://img.shields.io/badge/version-1.1.1-1DB954" alt="Version 1.1.1">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0F766E" alt="Windows and macOS">
+  <a href="https://github.com/kerwilgil/PlaylistAI/actions/workflows/tests.yml"><img src="https://github.com/kerwilgil/PlaylistAI/actions/workflows/tests.yml/badge.svg" alt="CI"></a>
 </p>
 
 <p align="center">
@@ -39,7 +40,7 @@
 - ⚡ **Verificación en paralelo** — búsquedas concurrentes para acelerar la creación de listas grandes.
 - 💻 **Local-first** — se ejecuta en tu equipo (`127.0.0.1:5000`); credenciales en `.env`, nunca empaquetadas.
 - 🪟 **Soporte nativo Windows** — build de un solo archivo `.exe` con PyInstaller.
-- 🍎 **Soporte nativo macOS** — build `.app` firmado ad-hoc para uso local; binario Apple Silicon precompilado disponible.
+- 🍎 **Soporte nativo macOS** — build `.app` firmado ad-hoc para uso local; puede compilarse localmente como `.app` en macOS.
 
 ---
 
@@ -50,8 +51,7 @@
 | Plataforma | Enlace |
 |------------|--------|
 | **Windows 10/11 (x64)** | [`PlaylistAI-1.1.1-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.1/PlaylistAI-1.1.1-Windows-x64.zip) — extrae y ejecuta `PlaylistAI.exe` |
-| **macOS (Apple Silicon)** | [`PlaylistAI-1.1.1-macOS-arm64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.1/PlaylistAI-1.1.1-macOS-arm64.zip) — descomprime, mueve `PlaylistAI.app` a *Aplicaciones*; primer lanzamiento: clic derecho → **Abrir** (firma ad-hoc, sin notarizar) |
-| **macOS (Intel) o compilar tú mismo** | Descarga el código desde la [release 1.1.1](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.1) y construye con `bash scripts/build_macos.sh` |
+| **macOS (Apple Silicon / Intel)** | Compila desde el código fuente con `bash scripts/build_macos.sh` |
 | **Código fuente** | `git clone https://github.com/kerwilgil/PlaylistAI.git` |
 
 > La app corre en `http://127.0.0.1:5000`. Tus credenciales quedan en `.env` junto al ejecutable (Windows) o en `~/Library/Application Support/PlaylistAI/.env` (macOS). **Nunca** se incluyen en el binario.

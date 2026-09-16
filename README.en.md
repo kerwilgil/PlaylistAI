@@ -17,6 +17,7 @@
   <img src="https://img.shields.io/badge/version-1.1.1-1DB954" alt="Version 1.1.1">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0F766E" alt="Windows and macOS">
+  <a href="https://github.com/kerwilgil/PlaylistAI/actions/workflows/tests.yml"><img src="https://github.com/kerwilgil/PlaylistAI/actions/workflows/tests.yml/badge.svg" alt="CI"></a>
 </p>
 
 <p align="center">
@@ -39,7 +40,7 @@
 - ⚡ **Parallel track verification** — concurrent searches to speed up large playlist creation.
 - 💻 **Local-first** — runs on your machine (`127.0.0.1:5000`); credentials in `.env`, never bundled.
 - 🪟 **Native Windows support** — single-file `.exe` built with PyInstaller.
-- 🍎 **Native macOS support** — ad-hoc signed `.app` for local use; Apple Silicon prebuilt binary available.
+- 🍎 **Native macOS support** — ad-hoc signed `.app` for local use; can be compiled locally as `.app` on macOS.
 
 ---
 
@@ -50,8 +51,7 @@
 | Platform | Link |
 |----------|------|
 | **Windows 10/11 (x64)** | [`PlaylistAI-1.1.1-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.1/PlaylistAI-1.1.1-Windows-x64.zip) — extract and run `PlaylistAI.exe` |
-| **macOS (Apple Silicon)** | [`PlaylistAI-1.1.1-macOS-arm64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.1/PlaylistAI-1.1.1-macOS-arm64.zip) — unzip, move `PlaylistAI.app` to *Applications*; first launch: right-click → **Open** (ad-hoc signed, not notarized) |
-| **macOS (Intel) or build yourself** | Download source from [release 1.1.1](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.1) and build with `bash scripts/build_macos.sh` |
+| **macOS (Apple Silicon / Intel)** | Compile from source with `bash scripts/build_macos.sh` |
 | **Source code** | `git clone https://github.com/kerwilgil/PlaylistAI.git` |
 
 > The app runs at `http://127.0.0.1:5000`. Credentials stay in `.env` next to the executable (Windows) or in `~/Library/Application Support/PlaylistAI/.env` (macOS). **Never** embedded in the binary.
