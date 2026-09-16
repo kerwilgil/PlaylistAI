@@ -205,9 +205,15 @@ flowchart TD
 
 ---
 
-## Capturas de pantalla
+## Captura de pantalla
 
-> Próximamente. El icono de la app está disponible en `assets/playlistai-icon.png`.
+<p align="center">
+  <img src="assets/screenshots/playlistai-interface.png"
+       alt="Interfaz principal de PlaylistAI"
+       width="900">
+</p>
+
+PlaylistAI permite crear, ampliar y analizar playlists de Spotify mediante IA desde una interfaz local.
 
 ---
 
