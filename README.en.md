@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Flask-3.1.3%2B-000000?logo=flask&logoColor=white" alt="Flask 3.1.3+">
   <img src="https://img.shields.io/badge/Spotify_Web_API-1DB954?logo=spotify&logoColor=white" alt="Spotify Web API">
   <img src="https://img.shields.io/badge/AI-Multi_provider-8B5CF6" alt="Multi-provider AI">
-  <img src="https://img.shields.io/badge/version-1.1.0-1DB954" alt="Version 1.1.0">
+  <img src="https://img.shields.io/badge/version-1.1.1-1DB954" alt="Version 1.1.1">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0F766E" alt="Windows and macOS">
 </p>
