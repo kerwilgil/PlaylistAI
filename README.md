@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0"><strong>Descargar PlaylistAI 1.1.0</strong></a>
+  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.1"><strong>Descargar PlaylistAI 1.1.1</strong></a>
 </p>
 
 <p align="center">
@@ -49,9 +49,9 @@
 
 | Plataforma | Enlace |
 |------------|--------|
-| **Windows 10/11 (x64)** | [`PlaylistAI-1.1.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.0/PlaylistAI-1.1.0-Windows-x64.zip) — extrae y ejecuta `PlaylistAI.exe` |
-| **macOS (Apple Silicon)** | [`PlaylistAI-1.1.0-macOS-arm64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.0/PlaylistAI-1.1.0-macOS-arm64.zip) — descomprime, mueve `PlaylistAI.app` a *Aplicaciones*; primer lanzamiento: clic derecho → **Abrir** (firma ad-hoc, sin notarizar) |
-| **macOS (Intel) o compilar tú mismo** | Descarga el código desde la [release 1.1.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0) y construye con `bash scripts/build_macos.sh` |
+| **Windows 10/11 (x64)** | [`PlaylistAI-1.1.1-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.1/PlaylistAI-1.1.1-Windows-x64.zip) — extrae y ejecuta `PlaylistAI.exe` |
+| **macOS (Apple Silicon)** | [`PlaylistAI-1.1.1-macOS-arm64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.1/PlaylistAI-1.1.1-macOS-arm64.zip) — descomprime, mueve `PlaylistAI.app` a *Aplicaciones*; primer lanzamiento: clic derecho → **Abrir** (firma ad-hoc, sin notarizar) |
+| **macOS (Intel) o compilar tú mismo** | Descarga el código desde la [release 1.1.1](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.1) y construye con `bash scripts/build_macos.sh` |
 | **Código fuente** | `git clone https://github.com/kerwilgil/PlaylistAI.git` |
 
 > La app corre en `http://127.0.0.1:5000`. Tus credenciales quedan en `.env` junto al ejecutable (Windows) o en `~/Library/Application Support/PlaylistAI/.env` (macOS). **Nunca** se incluyen en el binario.

@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0"><strong>Download PlaylistAI 1.1.0</strong></a>
+  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.1"><strong>Download PlaylistAI 1.1.1</strong></a>
 </p>
 
 <p align="center">
@@ -49,9 +49,9 @@
 
 | Platform | Link |
 |----------|------|
-| **Windows 10/11 (x64)** | [`PlaylistAI-1.1.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.0/PlaylistAI-1.1.0-Windows-x64.zip) — extract and run `PlaylistAI.exe` |
-| **macOS (Apple Silicon)** | [`PlaylistAI-1.1.0-macOS-arm64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.0/PlaylistAI-1.1.0-macOS-arm64.zip) — unzip, move `PlaylistAI.app` to *Applications*; first launch: right-click → **Open** (ad-hoc signed, not notarized) |
-| **macOS (Intel) or build yourself** | Download source from [release 1.1.0](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.0) and build with `bash scripts/build_macos.sh` |
+| **Windows 10/11 (x64)** | [`PlaylistAI-1.1.1-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.1/PlaylistAI-1.1.1-Windows-x64.zip) — extract and run `PlaylistAI.exe` |
+| **macOS (Apple Silicon)** | [`PlaylistAI-1.1.1-macOS-arm64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.1/PlaylistAI-1.1.1-macOS-arm64.zip) — unzip, move `PlaylistAI.app` to *Applications*; first launch: right-click → **Open** (ad-hoc signed, not notarized) |
+| **macOS (Intel) or build yourself** | Download source from [release 1.1.1](https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.1) and build with `bash scripts/build_macos.sh` |
 | **Source code** | `git clone https://github.com/kerwilgil/PlaylistAI.git` |
 
 > The app runs at `http://127.0.0.1:5000`. Credentials stay in `.env` next to the executable (Windows) or in `~/Library/Application Support/PlaylistAI/.env` (macOS). **Never** embedded in the binary.
