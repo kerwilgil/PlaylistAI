@@ -7,17 +7,17 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     throw "No se encontró uv. Instálalo desde https://docs.astral.sh/uv/ y vuelve a ejecutar."
 }
 
-uv run `
-    --with-requirements requirements.txt `
-    --with-requirements requirements-build.txt `
-    pyinstaller `
-    --noconfirm `
-    --clean `
-    --distpath dist/windows `
-    packaging/windows.spec
-
-if ($LASTEXITCODE -ne 0) {
-    throw "PyInstaller falló con código de salida $LASTEXITCODE. Cierra PlaylistAI.exe si está abierto y vuelve a intentar."
+$BuildEnv = Join-Path ([System.IO.Path]::GetTempPath()) ("playlistai-build-" + [guid]::NewGuid())
+try {
+    uv venv --python 3.12.15 $BuildEnv
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el entorno de build." }
+    $BuildPython = Join-Path $BuildEnv "Scripts\python.exe"
+    uv pip install --python $BuildPython --require-hashes --only-binary :all: -r requirements-build.lock
+    if ($LASTEXITCODE -ne 0) { throw "No se pudieron instalar las dependencias fijadas." }
+    & $BuildPython -m PyInstaller --noconfirm --clean --distpath dist/windows packaging/windows.spec
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller falló con código de salida $LASTEXITCODE." }
+} finally {
+    if (Test-Path -LiteralPath $BuildEnv) { Remove-Item -LiteralPath $BuildEnv -Recurse -Force }
 }
 
 $OutputDirectory = Join-Path $ProjectRoot "dist\windows"

@@ -1,7 +1,7 @@
-﻿import math, os, re, json, secrets, time, unicodedata, requests
+﻿import math, os, re, json, time, unicodedata, requests
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlencode, urlparse
-from flask import Flask, redirect, request, session, jsonify, render_template, Response, stream_with_context
+from flask import Flask, redirect, request, session, jsonify, render_template, Response, stream_with_context, g
 from werkzeug.exceptions import HTTPException, InternalServerError
 from spotipy.oauth2 import SpotifyOAuth
 from spotipy.exceptions import SpotifyException
@@ -9,11 +9,13 @@ from spotipy.cache_handler import MemoryCacheHandler
 import spotipy
 from runtime_paths import env_file_path
 from local_ai import LOCAL_AI_TIMEOUT_SECONDS, LocalAIError, call_local_ai, cli_status
+from spotify_session import SpotifySessions
 
 app = Flask(__name__)
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 app.secret_key = os.urandom(24)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+spotify_sessions = SpotifySessions()
 
 @app.errorhandler(HTTPException)
 def handle_http_exception(error):
@@ -116,24 +118,15 @@ PROVIDERS = {
         "name": "OpenAI",
         "access": "api",
         "detail": "Usa OPENAI_API_KEY",
-        "models": [
-            {"id": "gpt-5.6-terra", "label": "GPT-5.6 Terra (balanceado · recomendado)"},
-            {"id": "gpt-5.6-sol",   "label": "GPT-5.6 Sol (máxima calidad)"},
-            {"id": "gpt-5.6-luna",  "label": "GPT-5.6 Luna (rápido/económico)"},
-        ]
+        "dynamic": True,
+        "models": []
     },
     "nvidia": {
         "name": "NVIDIA NIM",
         "access": "api",
         "detail": "Usa NVIDIA_API_KEY",
-        "models": [
-            {"id": "deepseek-ai/deepseek-v4-pro",       "label": "DeepSeek V4 Pro (recomendado · calidad)"},
-            {"id": "qwen/qwen3-next-80b-a3b-instruct",  "label": "Qwen3-Next 80B (calidad + rápido)"},
-            {"id": "deepseek-ai/deepseek-v4-flash",     "label": "DeepSeek V4 Flash (más rápido)"},
-            {"id": "meta/llama-3.1-70b-instruct",       "label": "Llama 3.1 70B Instruct (rápido)"},
-            {"id": "nvidia/nemotron-3-ultra-550b-a55b", "label": "Nemotron 3 Ultra 550B (máx calidad, lento)"},
-            {"id": "qwen/qwen3.5-397b-a17b",            "label": "Qwen 3.5 397B (VLM)"},
-        ]
+        "dynamic": True,
+        "models": []
     },
     "claude_code": {
         "name": "Claude Code",
@@ -161,7 +154,7 @@ PROVIDERS = {
 # ───────────────────────────────────────────────────────────────
 
 def get_sp():
-    token = session.get("token_info")
+    token = getattr(g, "spotify_token", None)
     if not token:
         return None
     # retries=0: si Spotify devuelve 429 (rate limit), que lance la excepción
@@ -192,31 +185,24 @@ def spotify_oauth(state=None):
         scope=SCOPES,
         state=state,
         show_dialog=True,
+        requests_timeout=12,
         # cache_handler=None NO desactiva el cache de spotipy: la libreria lo
         # trata como "no especificado" y usa su CacheFileHandler por defecto,
         # que escribe el token en texto plano a .cache en cada login. Este
         # objeto SpotifyOAuth se crea nuevo en cada request y el token real
-        # vive en session["token_info"] (ver callback()/get_sp()), asi que
-        # un cache en memoria descartable es el equivalente correcto a "sin cache".
+        # vive en el almacén en memoria de este proceso, no en la cookie.
         cache_handler=MemoryCacheHandler(),
     )
 
 def refresh_token_if_needed():
-    token = session.get("token_info")
+    sid = session.get("spotify_sid")
+    if not spotify_sessions.contains(sid) or spotify_config_error():
+        return False
+    token = spotify_sessions.resolve(sid, spotify_oauth())
     if not token:
+        session.clear()
         return False
-    if spotify_config_error():
-        return False
-    oauth = spotify_oauth()
-    if oauth.is_token_expired(token):
-        try:
-            token = oauth.refresh_access_token(token["refresh_token"])
-        except Exception:
-            # Refresh token revocado/inválido (ej. se quitó el acceso de la app
-            # en Spotify). Limpiar sesión → el frontend recibe 401 y pide reconectar.
-            session.clear()
-            return False
-        session["token_info"] = token
+    g.spotify_token = token
     return True
 
 def extract_playlist_id(url_or_id):
@@ -249,9 +235,71 @@ def get_playlist_for_analysis(sp, playlist_id):
         offset += limit
     return pl, items
 
+MODEL_BASES = {
+    "openai": "https://api.openai.com/v1",
+    "nvidia": "https://integrate.api.nvidia.com/v1",
+}
+_model_cache = {}
+
+
+def model_catalog(provider, force=False):
+    key = OPENAI_KEY if provider == "openai" else NVIDIA_KEY
+    if not key:
+        return [], "Falta la API key en .env."
+    cached = _model_cache.get(provider)
+    if cached and not force and time.monotonic() < cached[0]:
+        return cached[1]
+    models = []
+    error = None
+    try:
+        response = requests.get(
+            MODEL_BASES[provider] + "/models",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=5, allow_redirects=False,
+        )
+        status = response.status_code
+        if status in (401, 403):
+            error = "El proveedor rechazó la autenticación o el acceso."
+        elif status == 429:
+            error = "Límite de consultas. Intenta más tarde."
+        elif status != 200:
+            error = f"No se pudo consultar el catálogo (HTTP {status})."
+        else:
+            entries = response.json()["data"]
+            if not isinstance(entries, list):
+                raise ValueError("Invalid catalog")
+            ids = {item["id"] for item in entries if isinstance(item, dict)
+                   and isinstance(item.get("id"), str) and item["id"].strip()}
+            models = [{"id": mid, "label": mid} for mid in sorted(ids)]
+            if not models:
+                error = "El catálogo está vacío."
+    except requests.RequestException:
+        error = "No se pudo conectar con el proveedor."
+    except (ValueError, KeyError, TypeError):
+        error = "El proveedor devolvió un catálogo inválido."
+    result = (models, error)
+    _model_cache[provider] = (time.monotonic() + (30 if error else 300), result)
+    return result
+
+
+@app.route("/api/models/<provider>")
+def api_models(provider):
+    if provider not in MODEL_BASES:
+        return jsonify({"error": "Proveedor sin catalogo dinamico."}), 404
+    models, error = model_catalog(provider, force=request.args.get("refresh") == "1")
+    return jsonify({"models": models, "error": error})
+
+
 def ai_config_error(provider, model=None):
     if provider not in PROVIDERS:
         return f"Proveedor de IA no soportado: {provider}"
+    if provider in MODEL_BASES:
+        models, error = model_catalog(provider)
+        if error:
+            return error
+        if not model or not any(item["id"] == model for item in models):
+            return "Selecciona un modelo disponible en Configuracion de IA."
+        return None
     valid_models = {item["id"] for item in PROVIDERS[provider]["models"]}
     if model and model not in valid_models:
         return f"Modelo de IA no soportado para {PROVIDERS[provider]['name']}: {model}"
@@ -726,54 +774,42 @@ def call_ai(prompt, provider="anthropic", model=None, max_output_tokens=5000, ou
         return "Error Anthropic: la respuesta no incluyó ningún bloque de texto."
 
     # ── OpenAI ──
-    elif provider == "openai":
-        model = model or "gpt-5.6-terra"
-        headers = {"Authorization": f"Bearer {OPENAI_KEY}", "content-type": "application/json"}
-        if model.startswith("gpt-5"):
-            r = requests.post(
-                "https://api.openai.com/v1/responses",
-                headers=headers,
-                json={"model": model, "max_output_tokens": max_output_tokens, "input": prompt},
-                timeout=60
-            )
+    elif provider in MODEL_BASES:
+        if not model:
+            return "Error IA: selecciona un modelo en Configuracion."
+        key = OPENAI_KEY if provider == "openai" else NVIDIA_KEY
+        use_responses = provider == "openai" and model.startswith("gpt-5")
+        endpoint = "/responses" if use_responses else "/chat/completions"
+        payload = {"model": model}
+        if use_responses:
+            payload.update(input=prompt, max_output_tokens=max_output_tokens)
         else:
-            r = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json={"model": model, "max_tokens": max_output_tokens,
-                      "messages": [{"role": "user", "content": prompt}]},
-                timeout=60
+            limit = "max_completion_tokens" if provider == "openai" else "max_tokens"
+            payload.update({limit: max_output_tokens, "messages": [{"role": "user", "content": prompt}]})
+        try:
+            response = requests.post(
+                MODEL_BASES[provider] + endpoint, json=payload,
+                headers={"Authorization": f"Bearer {key}"}, timeout=60, allow_redirects=False,
             )
-        data = r.json()
-        if not r.ok:
-            return f"Error OpenAI: {data.get('error', {}).get('message', r.text)}"
-        if "output_text" in data:
-            return data["output_text"]
-        if data.get("output"):
-            parts = []
-            for item in data["output"]:
-                for content in item.get("content", []):
-                    if content.get("type") in {"output_text", "text"}:
-                        parts.append(content.get("text", ""))
-            if parts:
-                return "\n".join(parts)
-        return data["choices"][0]["message"]["content"]
-
-    # ── NVIDIA NIM ──
-    elif provider == "nvidia":
-        model = model or "deepseek-ai/deepseek-v4-pro"
-        r = requests.post(
-            "https://integrate.api.nvidia.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {NVIDIA_KEY}",
-                     "content-type": "application/json"},
-            json={"model": model, "max_tokens": max_output_tokens,
-                  "messages": [{"role": "user", "content": prompt}]},
-            timeout=60
-        )
-        data = r.json()
-        if not r.ok:
-            return f"Error NVIDIA: {data.get('detail', r.text)}"
-        return data["choices"][0]["message"]["content"]
+            if response.status_code in (400, 404, 422):
+                return f"Error IA: el proveedor rechazo el modelo o los parametros para {endpoint}. Elige otro modelo."
+            if response.status_code != 200:
+                return f"Error IA: la generacion fue rechazada (HTTP {response.status_code})."
+            data = response.json()
+            if use_responses:
+                output = data.get("output_text") or "\n".join(
+                    part.get("text", "") for item in data.get("output", [])
+                    for part in item.get("content", []) if part.get("type") == "output_text"
+                )
+            else:
+                output = data["choices"][0]["message"]["content"]
+            if isinstance(output, str) and output.strip():
+                return output
+        except requests.RequestException:
+            return "Error IA: no se pudo conectar con el proveedor."
+        except (ValueError, IndexError, KeyError, TypeError, AttributeError):
+            pass
+        return "Error IA: el modelo no devolvio texto utilizable para PlaylistAI."
 
     return "Proveedor no soportado."
 
@@ -781,7 +817,7 @@ def call_ai(prompt, provider="anthropic", model=None, max_output_tokens=5000, ou
 
 @app.route("/")
 def index():
-    logged_in = "token_info" in session
+    logged_in = spotify_sessions.contains(session.get("spotify_sid"))
     return render_template(
         "index.html",
         logged_in=logged_in,
@@ -795,7 +831,8 @@ def login():
     error = spotify_config_error()
     if error:
         return redirect("/?" + urlencode({"auth_error": error}))
-    state = secrets.token_urlsafe(24)
+    spotify_sessions.consume_state(session.get("spotify_auth_state"))
+    state = spotify_sessions.new_state()
     session["spotify_auth_state"] = state
     return redirect(spotify_oauth(state=state).get_authorize_url())
 
@@ -806,20 +843,26 @@ def callback():
         return redirect("/?" + urlencode({"auth_error": error}))
     spotify_error = request.args.get("error")
     if spotify_error:
+        spotify_sessions.consume_state(session.pop("spotify_auth_state", None))
         return redirect("/?" + urlencode({"auth_error": f"Spotify canceló el acceso: {spotify_error}"}))
     expected_state = session.pop("spotify_auth_state", None)
     received_state = request.args.get("state")
-    if not expected_state or received_state != expected_state:
+    state_valid = spotify_sessions.consume_state(expected_state)
+    if not expected_state or received_state != expected_state or not state_valid:
         return redirect("/?" + urlencode({"auth_error": "La sesión de autenticación expiró. Intenta conectar de nuevo."}))
     code = request.args.get("code")
     if not code:
         return redirect("/?" + urlencode({"auth_error": "Spotify no devolvió un código de autorización."}))
     token_info = spotify_oauth().get_access_token(code, as_dict=True)
-    session["token_info"] = token_info
+    spotify_sessions.discard(session.get("spotify_sid"))
+    session.clear()
+    session["spotify_sid"] = spotify_sessions.create(token_info)
     return redirect("/")
 
 @app.route("/logout")
 def logout():
+    spotify_sessions.discard(session.get("spotify_sid"))
+    spotify_sessions.consume_state(session.get("spotify_auth_state"))
     session.clear()
     return redirect("/")
 
@@ -917,6 +960,8 @@ Responde SOLO en este formato JSON (sin markdown, sin texto extra):
     if ai_error:
         return jsonify({"error": ai_error}), 400
     ai_raw = call_ai(prompt, provider=provider, model=model)
+    if provider in MODEL_BASES and isinstance(ai_raw, str) and ai_raw.startswith("Error IA:"):
+        return jsonify({"error": ai_raw}), 502
     try:
         ai = parse_ai_json(ai_raw)
     except Exception:
@@ -1275,6 +1320,9 @@ def stream_resolve_from_prompt(sp, name, mood, count, provider, model, deadline,
             max_output_tokens=token_budget,
             output_schema=_playlist_output_schema(include_description=is_first_round),
         )
+        if provider in MODEL_BASES and isinstance(ai_raw, str) and ai_raw.startswith("Error IA:"):
+            fatal["error"] = ai_raw
+            return
         try:
             ai = parse_playlist_json(ai_raw)
         except (TypeError, ValueError, json.JSONDecodeError):

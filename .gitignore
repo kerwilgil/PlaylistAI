@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .cache
 __pycache__/
 .claude/

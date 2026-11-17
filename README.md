@@ -14,14 +14,14 @@
   <img src="https://img.shields.io/badge/Flask-3.1.3%2B-000000?logo=flask&logoColor=white" alt="Flask 3.1.3+">
   <img src="https://img.shields.io/badge/Spotify_Web_API-1DB954?logo=spotify&logoColor=white" alt="Spotify Web API">
   <img src="https://img.shields.io/badge/AI-Multi_provider-8B5CF6" alt="Multi-provider AI">
-  <img src="https://img.shields.io/badge/version-1.1.1-1DB954" alt="Version 1.1.1">
+  <img src="https://img.shields.io/badge/version-1.2.0-1DB954" alt="Version 1.2.0">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-0F766E" alt="Windows and macOS">
   <a href="https://github.com/kerwilgil/PlaylistAI/actions/workflows/tests.yml"><img src="https://github.com/kerwilgil/PlaylistAI/actions/workflows/tests.yml/badge.svg" alt="CI"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.1.1"><strong>Descargar PlaylistAI 1.1.1</strong></a>
+  <a href="https://github.com/kerwilgil/PlaylistAI/releases/tag/v1.2.0"><strong>Descargar PlaylistAI 1.2.0</strong></a>
 </p>
 
 <p align="center">
@@ -50,7 +50,7 @@
 
 | Plataforma | Enlace |
 |------------|--------|
-| **Windows 10/11 (x64)** | [`PlaylistAI-1.1.1-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.1.1/PlaylistAI-1.1.1-Windows-x64.zip) — extrae y ejecuta `PlaylistAI.exe` |
+| **Windows 10/11 (x64)** | [`PlaylistAI-1.2.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.2.0/PlaylistAI-1.2.0-Windows-x64.zip) — extrae y ejecuta `PlaylistAI.exe` |
 | **macOS (Apple Silicon / Intel)** | Compila desde el código fuente con `bash scripts/build_macos.sh` |
 | **Código fuente** | `git clone https://github.com/kerwilgil/PlaylistAI.git` |
 
@@ -132,10 +132,10 @@ flowchart TD
 ### Proveedores de IA
 | Modo | Proveedores | Modelos destacados |
 |------|-------------|-------------------|
-| **API** | Anthropic, OpenAI, NVIDIA NIM | Claude Sonnet 5, GPT-5.6 Terra, DeepSeek V4 Pro |
+| **API** | Anthropic, OpenAI, NVIDIA NIM | Claude Sonnet 5; catálogos dinámicos para OpenAI y NVIDIA NIM |
 | **Suscripción local** | Claude Code, Codex | Automático (configuración del CLI), Sonnet/Opus/Haiku, GPT-5.6 |
 
-> En modo suscripción local, PlaylistAI usa tu sesión CLI ya autenticada. No lee ni almacena credenciales de cuenta. Ejecuta los CLIs sin herramientas, sin persistencia y (Codex) en sandbox de solo lectura.
+> En modo suscripción local, PlaylistAI usa tu sesión CLI ya autenticada y no almacena las credenciales de la cuenta. Solicita a Claude Code ejecutarse sin herramientas y a Codex en un sandbox de solo lectura, sin persistencia de sesión.
 
 ### Verificación en Spotify
 - Búsqueda paralela (ThreadPoolExecutor, 5 workers)
@@ -219,6 +219,8 @@ PlaylistAI permite crear, ampliar y analizar playlists de Spotify mediante IA de
 
 ## Contribuir
 
+Consulta [el flujo de trabajo con IA](docs/AI_WORKFLOW.md) y su evidencia disponible.
+
 PlaylistAI es open source bajo licencia MIT. Contribuciones bienvenidas:
 
 1. Haz fork del repo
@@ -233,10 +235,10 @@ Para bugs o propuestas de features, abre un *Issue*.
 ## Seguridad
 
 - `.env` ignorado por Git — nunca se sube al repositorio
-- OAuth con `state` (CSRF protection) y `MemoryCacheHandler` (sin token en disco)
+- OAuth con `state`; los tokens se guardan en memoria del proceso y la cookie contiene un identificador de sesión. Al reiniciar la app hay que reconectar Spotify.
 - Headers de seguridad: `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: same-origin`
 - Bind exclusivo a loopback (`127.0.0.1:5000`)
-- Ver [`CONTEXT.md`](CONTEXT.md) para historial de auditorías y gotchas conocidos
+- Ver [el caso de estudio y las verificaciones](docs/AI_CASE_STUDY.md) para la auditoría y sus límites.
 
 ---
 

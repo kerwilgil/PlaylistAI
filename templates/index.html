@@ -246,6 +246,21 @@
   .input:hover { border-color: var(--border-strong); }
   .input:focus { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-subtle); }
   .input::placeholder { color: var(--text-muted); }
+  .model-settings { display: grid; gap: 12px; min-width: 0; }
+  .model-settings .input-label { margin: 0; font-weight: 600; }
+  #model-picker { min-width: 0; }
+  #model-picker summary { cursor: pointer; overflow-wrap: anywhere; }
+  #model-picker summary::marker { color: var(--green); }
+  .model-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  #model-status { flex: 1 1 14rem; min-width: 0; margin: 0; color: var(--text-secondary); font-size: 13px; overflow-wrap: anywhere; }
+  #model-status:empty { display: none; }
+  #refresh-models { max-width: 100%; }
+  #refresh-models:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+  #refresh-models[hidden] { display: none; }
+  #model-options { margin-top: 6px; padding: 6px; max-height: 16rem; overflow-y: auto; }
+  #model-options label { display: flex; align-items: baseline; gap: 8px; padding: 8px; border-radius: 8px; overflow-wrap: anywhere; }
+  #model-options label:hover, #model-options label:focus-within { background: var(--green-subtle); }
+  #model-options label:has(input:checked) { color: var(--green); }
   textarea.input { resize: vertical; min-height: 80px; line-height: 1.5; }
 
   /* ── CARDS ── */
@@ -773,9 +788,16 @@
       </div>
       <div id="model-select-wrap" style="display:none;margin-top:16px">
         <div class="card">
-          <div class="input-group" style="margin-bottom:0">
-            <label class="input-label" for="model-select">Modelo</label>
-            <select class="input" id="model-select"></select>
+          <div class="model-settings">
+            <span class="input-label" id="model-label">Modelo</span>
+            <details id="model-picker">
+              <summary class="input" id="model-summary" aria-labelledby="model-label model-summary">Selecciona un modelo</summary>
+              <div class="input" id="model-options" role="group" aria-labelledby="model-label"></div>
+            </details>
+            <div class="model-footer">
+              <p id="model-status" role="status"></p>
+              <button type="button" class="btn btn-ghost" id="refresh-models" onclick="updateModelSelect(aiConfig.provider, true)">Actualizar modelos</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1268,31 +1290,91 @@ function onProviderChange(key) {
   renderProviders();
 }
 
-function updateModelSelect(provider) {
+let modelRequest = 0;
+let selectedModel = null;
+
+async function updateModelSelect(provider, refresh = false) {
+  const requestId = ++modelRequest;
   const wrap = document.getElementById('model-select-wrap');
-  const sel = document.getElementById('model-select');
+  const picker = document.getElementById('model-picker');
+  const summary = document.getElementById('model-summary');
+  const options = document.getElementById('model-options');
+  const status = document.getElementById('model-status');
+  const refreshButton = document.getElementById('refresh-models');
+  const save = document.getElementById('save-ai-settings');
   const prov = providersData[provider];
-  if (!prov || !prov.models) { wrap.style.display = 'none'; return; }
-  wrap.style.display = 'block';
-
-  // Descarta modelos antiguos guardados en el navegador después de actualizar
-  // el catálogo. Así la UI y las peticiones usan siempre el mismo modelo válido.
-  if (!prov.models.some(m => m.id === aiConfig.model)) {
-    aiConfig.model = prov.models[0].id;
-    localStorage.setItem('ai_model', aiConfig.model);
+  const pending = refresh ? selectedModel : null;
+  selectedModel = null;
+  save.disabled = true;
+  picker.open = false;
+  options.replaceChildren();
+  summary.textContent = 'Selecciona un modelo';
+  status.textContent = '';
+  wrap.style.display = prov ? 'block' : 'none';
+  if (!prov) return;
+  refreshButton.hidden = !prov.dynamic;
+  refreshButton.disabled = !prov.available;
+  let models = prov.models;
+  if (prov.dynamic && prov.available) {
+    refreshButton.disabled = true;
+    status.textContent = 'Consultando modelos...';
+    try {
+      const response = await fetch('/api/models/' + encodeURIComponent(provider) + (refresh ? '?refresh=1' : ''), {cache: 'no-store'});
+      if (!response.ok) throw new Error();
+      const payload = await response.json();
+      if (requestId !== modelRequest || provider !== aiConfig.provider) return;
+      models = payload.models;
+      status.textContent = payload.error || 'La compatibilidad se verifica al generar.';
+    } catch {
+      if (requestId !== modelRequest || provider !== aiConfig.provider) return;
+      status.textContent = 'No se pudo cargar el catálogo. Intenta actualizar.';
+      models = [];
+    } finally {
+      if (requestId === modelRequest && provider === aiConfig.provider) refreshButton.disabled = false;
+    }
   }
-
-  sel.innerHTML = prov.models.map(m =>
-    `<option value="${m.id}" ${aiConfig.model === m.id ? 'selected' : ''}>${m.label}</option>`
-  ).join('');
+  const previous = pending || aiConfig.model || localStorage.getItem('ai_model_' + provider);
+  const current = models.find(model => model.id === previous) || (!prov.dynamic ? models[0] : null);
+  if (prov.dynamic && previous && models.length && !current) {
+    status.textContent = 'El modelo anterior ya no está disponible. Elige otro.';
+  }
+  selectedModel = current?.id || null;
+  if (!prov.dynamic) aiConfig.model = selectedModel;
+  summary.textContent = current?.label || 'Selecciona un modelo';
+  save.disabled = !prov.available || !selectedModel;
+  for (const model of models) {
+    const label = document.createElement('label');
+    const radio = document.createElement('input');
+    const name = document.createElement('span');
+    radio.type = 'radio';
+    radio.name = 'ai-model-choice';
+    radio.checked = model.id === selectedModel;
+    name.textContent = model.label;
+    radio.addEventListener('change', () => {
+      selectedModel = model.id;
+      summary.textContent = model.label;
+      save.disabled = !prov.available;
+    });
+    label.append(radio, name);
+    options.append(label);
+  }
 }
+
+document.getElementById('model-picker').addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    document.getElementById('model-picker').open = false;
+    document.getElementById('model-summary').focus();
+  }
+});
 
 function saveProviderSettings() {
   if (!providersData[aiConfig.provider]?.available) {
     toast('Primero instala e inicia sesión en el proveedor seleccionado.', 'error');
     return;
   }
-  aiConfig.model = document.getElementById('model-select').value;
+  if (!selectedModel) return;
+  aiConfig.model = selectedModel;
+  localStorage.setItem('ai_model_' + aiConfig.provider, selectedModel);
   localStorage.setItem('ai_access', aiConfig.access);
   localStorage.setItem('ai_provider', aiConfig.provider);
   localStorage.setItem('ai_model', aiConfig.model);

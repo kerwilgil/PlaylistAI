@@ -111,14 +111,14 @@ class LocalAIProviderApiTests(unittest.TestCase):
     def test_settings_template_exposes_access_modes_and_version(self):
         client = app.app.test_client()
         with client.session_transaction() as flask_session:
-            flask_session["token_info"] = {"access_token": "test"}
+            flask_session["spotify_sid"] = app.spotify_sessions.create({"access_token": "test"})
 
         response = client.get("/")
         html = response.get_data(as_text=True)
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Suscripción local", html)
-        self.assertIn("PlaylistAI 1.1.0", html)
+        self.assertIn("PlaylistAI 1.2.0", html)
 
     @patch("app.cli_status")
     def test_provider_endpoint_groups_subscription_and_api_modes(self, cli_status):

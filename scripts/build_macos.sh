@@ -14,10 +14,11 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-uv run \
-  --with-requirements requirements.txt \
-  --with-requirements requirements-build.txt \
-  pyinstaller \
+BUILD_ENV="$(mktemp -d "${TMPDIR:-/tmp}/playlistai-build.XXXXXXXX")"
+trap 'rm -rf -- "$BUILD_ENV"' EXIT
+uv venv --python 3.12.15 "$BUILD_ENV"
+uv pip install --python "$BUILD_ENV/bin/python" --require-hashes --only-binary :all: -r requirements-build.lock
+"$BUILD_ENV/bin/python" -m PyInstaller \
   --noconfirm \
   --clean \
   --distpath dist/macos \
