@@ -16,7 +16,7 @@ fi
 
 BUILD_ENV="$(mktemp -d "${TMPDIR:-/tmp}/playlistai-build.XXXXXXXX")"
 trap 'rm -rf -- "$BUILD_ENV"' EXIT
-uv venv --python 3.12.15 "$BUILD_ENV"
+uv venv --python 3.12.14 "$BUILD_ENV"
 uv pip install --python "$BUILD_ENV/bin/python" --require-hashes --only-binary :all: -r requirements-build.lock
 "$BUILD_ENV/bin/python" -m PyInstaller \
   --noconfirm \
