@@ -9,7 +9,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 
 $BuildEnv = Join-Path ([System.IO.Path]::GetTempPath()) ("playlistai-build-" + [guid]::NewGuid())
 try {
-    uv venv --python 3.12.15 $BuildEnv
+    uv venv --python 3.12.14 $BuildEnv
     if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el entorno de build." }
     $BuildPython = Join-Path $BuildEnv "Scripts\python.exe"
     uv pip install --python $BuildPython --require-hashes --only-binary :all: -r requirements-build.lock
