@@ -51,7 +51,7 @@
 | Platform | Link |
 |----------|------|
 | **Windows 10/11 (x64)** | [`PlaylistAI-1.2.0-Windows-x64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.2.0/PlaylistAI-1.2.0-Windows-x64.zip) — extract and run `PlaylistAI.exe` |
-| **macOS (Apple Silicon / Intel)** | Compile from source with `bash scripts/build_macos.sh` |
+| **macOS (Apple Silicon, arm64)** | [`PlaylistAI-1.2.0-macOS-arm64.zip`](https://github.com/kerwilgil/PlaylistAI/releases/download/v1.2.0/PlaylistAI-1.2.0-macOS-arm64.zip) — unzip and move `PlaylistAI.app` to Applications. Ad-hoc signed, **not notarized**: on first launch, right-click → Open → Open (or System Settings → Privacy & Security → "Open Anyway"). Intel Macs: compile with `bash scripts/build_macos.sh` |
 | **Source code** | `git clone https://github.com/kerwilgil/PlaylistAI.git` |
 
 > The app runs at `http://127.0.0.1:5000`. Credentials stay in `.env` next to the executable (Windows) or in `~/Library/Application Support/PlaylistAI/.env` (macOS). **Never** embedded in the binary.
